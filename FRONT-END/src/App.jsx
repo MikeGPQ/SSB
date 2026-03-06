@@ -1,16 +1,20 @@
-function App() {
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-lg shadow-md">
-        <h1 className="text-3xl font-bold text-blue-600 mb-4">
-          Sistema de Seguimiento de Bajas
-        </h1>
-        <p className="text-gray-700">
-          ¡Tailwind y React están configurados correctamente!
-        </p>
-      </div>
-    </div>
-  )
-}
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Layout from './components/Layout';
+import ListadoAlumnos from './pages/ListadoAlumnos';
+import PerfilAlumno from './pages/PerfilAlumno';
 
-export default App
+const PlanesEstudio = () => <div className="p-4"><h2 className="text-2xl font-bold">Gestión de Planes de Estudio</h2></div>;
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<ListadoAlumnos />} />
+          <Route path="alumno/:matricula" element={<PerfilAlumno />} />
+          <Route path="planes-estudio" element={<PlanesEstudio />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
