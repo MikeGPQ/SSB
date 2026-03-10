@@ -2,8 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import ListadoAlumnos from './pages/ListadoAlumnos';
 import PerfilAlumno from './pages/PerfilAlumno';
-
-const PlanesEstudio = () => <div className="p-4"><h2 className="text-2xl font-bold">Gestión de Planes de Estudio</h2></div>;
+import PlanesEstudio from './pages/PlanesEstudio';
 
 export default function App() {
   return (
