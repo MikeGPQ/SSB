@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { EyeIcon } from '@heroicons/react/24/outline';
 import Papa from 'papaparse';
-import { doc, getDoc, writeBatch, collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const ESTATUS_COLORS = {
