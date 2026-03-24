@@ -93,13 +93,15 @@ const manejarArchivo = (e) => {
         results.data.forEach((row, index) => {
           const filaCSV = index + 2; 
           
-          const id = row.Id ? row.Id.trim() : '';
-          const apPaterno = row['Apellido paterno'] ? row['Apellido paterno'].trim() : '';
-          const apMaterno = row['Apellido materno'] ? row['Apellido materno'].trim() : '';
-          const nombre = row.Nombre ? row.Nombre.trim() : '';
-          const estatus = row.Estatus ? row.Estatus.trim() : '';
-          const programa = row.Programa ? row.Programa.trim() : '';
-          const tipo = row.Tipo ? row.Tipo.trim() : '';
+          const id = (row.Id || row.id || '').toString().trim();
+          const apPaterno = (row['Apellido paterno'] || row['Apellido Paterno'] || '').trim();
+          const apMaterno = (row['Apellido materno'] || row['Apellido Materno'] || '').trim();
+          const nombre = (row.Nombre || row.nombre || '').trim();
+          const estatus = (row.Estatus || row.estatus || '').trim();
+          const programa = (row.Programa || row.programa || '').trim();
+          const tipo = (row.Tipo || row.tipo || '').trim();
+
+          const nombreEnsamblado = `${apPaterno} ${apMaterno} ${nombre}`.trim().replace(/\s+/g, ' ');
 
           if (!estatus || !catalogoEstatus[estatus]) {
             return; 
@@ -110,7 +112,7 @@ const manejarArchivo = (e) => {
 
           if (!id || !apPaterno || !nombre) { 
             esValido = false;
-            motivoError = 'Dato requerido faltante (Id, Apellido o Nombre)';
+            motivoError = 'Dato requerido faltante (Id, Apellido paterno o Nombre)';
           } else if (!/^\d+$/.test(id)) {
             esValido = false;
             motivoError = 'Dato mal formateado (ID no numérico)';
@@ -122,6 +124,7 @@ const manejarArchivo = (e) => {
               nombre: nombre,
               apellido_paterno: apPaterno,
               apellido_materno: apMaterno,
+              nombre_completo: nombreEnsamblado, 
               programa: programa,
               estatus: estatus,
               tipo_ingreso: tipo,
