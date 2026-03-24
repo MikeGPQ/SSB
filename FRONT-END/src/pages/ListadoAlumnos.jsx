@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { EyeIcon } from '@heroicons/react/24/outline';
 import Papa from 'papaparse';
-import { collection, getDocs, doc, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const ESTATUS_COLORS = {
@@ -36,39 +36,42 @@ export default function ListadoAlumnos() {
   const [erroresImportacion, setErroresImportacion] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-useEffect(() => {
-    const fetchData = async () => {
+const cargarAlumnos = async () => {
+    setCargandoDatos(true);
+    try {
+      const alumnosSnapshot = await getDocs(collection(db, 'alumnos'));
+      const alumnosData = [];
+      alumnosSnapshot.forEach((documento) => {
+        alumnosData.push({ matricula: documento.id, ...documento.data() });
+      });
+      setAlumnos(alumnosData);
+    } catch (error) {
+      console.error("Error al obtener alumnos:", error);
+    } finally {
+      setCargandoDatos(false);
+    }
+  };
+
+  useEffect(() => {
+    const inicializarVista = async () => {
       try {
-        const catRef = doc(db, 'catalogos', 'estatus_baja');
-        const catSnap = await getDoc(catRef);
-        if (catSnap.exists()) {
-          setCatalogoEstatus(catSnap.data());
+        const catalogoRef = doc(db, 'catalogos', 'estatus_baja');
+        const catalogoSnap = await getDoc(catalogoRef);
+
+        if (catalogoSnap.exists()) {
+          setCatalogoEstatus(catalogoSnap.data());
         } else {
-          console.warn("No se encontró el catálogo 'estatus_baja' en Firestore.");
+          setCatalogoEstatus({});
         }
 
-        const querySnapshot = await getDocs(collection(db, 'alumnos'));
-        const alumnosData = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          
-          const nombreEnsamblado = `${data.apellido_paterno || ''} ${data.apellido_materno || ''} ${data.nombre || ''}`.trim();
-
-          return {
-            ...data,
-            matricula: doc.id, 
-            nombre_completo: nombreEnsamblado 
-          };
-        });
-        
-        setAlumnos(alumnosData);
+        await cargarAlumnos(); 
       } catch (error) {
-        console.error("Error al obtener datos de Firestore: ", error);
-      } finally {
-        setCargandoDatos(false);
+        console.error(error);
+        setCargandoDatos(false); 
       }
     };
-    
-    fetchData();
+
+    inicializarVista();
   }, []);
 
 const manejarArchivo = (e) => {
@@ -98,18 +101,19 @@ const manejarArchivo = (e) => {
           const programa = row.Programa ? row.Programa.trim() : '';
           const tipo = row.Tipo ? row.Tipo.trim() : '';
 
+          if (!estatus || !catalogoEstatus[estatus]) {
+            return; 
+          }
+
           let esValido = true;
           let motivoError = '';
 
-          if (!id || !apPaterno || !nombre || !estatus) {
+          if (!id || !apPaterno || !nombre) { 
             esValido = false;
-            motivoError = 'Dato requerido faltante (Id, Apellido, Nombre o Estatus)';
+            motivoError = 'Dato requerido faltante (Id, Apellido o Nombre)';
           } else if (!/^\d+$/.test(id)) {
             esValido = false;
             motivoError = 'Dato mal formateado (ID no numérico)';
-          } else if (!catalogoEstatus[estatus]) {
-            esValido = false;
-            motivoError = `Estatus '${estatus}' no válido en el catálogo`;
           }
 
           if (esValido) {
@@ -122,24 +126,24 @@ const manejarArchivo = (e) => {
               estatus: estatus,
               tipo_ingreso: tipo,
               
-              curp: '',
-              genero: '',
-              campus: '',
-              ciclo_primer_ingreso: '',
-              ciclo_ultimo_cursado: '',
-              motivo_baja: '',
-              documentacion_retirada: false,
-              tiene_adeudo: false,
-              detalle_adeudo: '',
-              contacto_correo: '',
-              contacto_telefono: '',
-              marcador_seguimiento: 'No contactado',
-              bitacora_llamadas: [],
-              plan_estudio_registrado: '',
-              plan_actual: true,
-              materias_aprobadas: [],
-              materias_reprobadas: [],
-              materias_faltantes: []
+              curp: null,
+              genero: null,
+              campus: null,
+              ciclo_primer_ingreso: null,
+              ciclo_ultimo_cursado: null,
+              motivo_baja: null,
+              documentacion_retirada: null,
+              tiene_adeudo: null,
+              detalle_adeudo: null,
+              contacto_correo: null,
+              contacto_telefono: null,
+              marcador_seguimiento: null,
+              bitacora_llamadas: null,
+              plan_estudio_registrado: null,
+              plan_actual: null,
+              materias_aprobadas: null,
+              materias_reprobadas: null,
+              materias_faltantes: null
             });
           } else {
             procesadosInvalidos.push({ fila: filaCSV, id: id || 'Desconocido', motivo: motivoError });
@@ -152,37 +156,41 @@ const manejarArchivo = (e) => {
     });
   };
 
-  const guardarImportacion = async (e) => {
-    e.preventDefault();
-    if (datosTemporales.length === 0) return;
+  const guardarImportacion = async () => {
+    if (datosTemporales.length === 0) {
+      alert("No hay datos válidos para guardar.");
+      return;
+    }
 
-    setIsSubmitting(true);
+    setIsSubmitting(true); 
+
     try {
-      const batch = writeBatch(db);
+      const chunks = [];
+      for (let i = 0; i < datosTemporales.length; i += 500) {
+        chunks.push(datosTemporales.slice(i, i + 500));
+      }
+
+      for (const chunk of chunks) {
+        const batch = writeBatch(db);
+        
+        chunk.forEach((alumno) => {
+          const docRef = doc(db, 'alumnos', String(alumno.matricula));
+          batch.set(docRef, alumno);
+        });
+
+        await batch.commit();
+      }
+
+      alert(`Se han guardado ${datosTemporales.length} alumnos correctamente.`);
       
-      datosTemporales.forEach((alumno) => {
-        const { matricula, ...datosAGuardar } = alumno; 
-        const alumnoRef = doc(db, 'alumnos', matricula.toString());
-        batch.set(alumnoRef, datosAGuardar, { merge: true });
-      });
-
-      await batch.commit();
-
-      const alumnosImportadosFormateados = datosTemporales.map(alumno => ({
-        ...alumno,
-        nombre_completo: `${alumno.apellido_paterno || ''} ${alumno.apellido_materno || ''} ${alumno.nombre || ''}`.trim()
-      }));
-
-      setAlumnos(prev => [...prev, ...alumnosImportadosFormateados]);
-
-      setDatosTemporales([]);
-
       cerrarModal();
+      await cargarAlumnos();
+
     } catch (error) {
       console.error("Error al guardar en Firestore:", error);
-      alert("Error de conexión al guardar los datos.");
+      alert("Hubo un error al guardar los datos en la base de datos.");
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false); 
     }
   };
 
@@ -190,6 +198,9 @@ const manejarArchivo = (e) => {
     setDatosTemporales([]);
     setErroresImportacion([]);
     setModalImportarAbierto(false);
+    
+    const fileInput = document.querySelector('input[type="file"]');
+    if (fileInput) fileInput.value = '';
   };
 
   const alumnosFiltrados = alumnos.filter(alumno => {
