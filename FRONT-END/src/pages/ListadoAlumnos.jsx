@@ -36,7 +36,10 @@ export default function ListadoAlumnos() {
   const [erroresImportacion, setErroresImportacion] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-const cargarAlumnos = async () => {
+  const [paginaActual, setPaginaActual] = useState(1);
+  const elementosPorPagina = 10;
+
+  const cargarAlumnos = async () => {
     setCargandoDatos(true);
     try {
       const alumnosSnapshot = await getDocs(collection(db, 'alumnos'));
@@ -74,7 +77,11 @@ const cargarAlumnos = async () => {
     inicializarVista();
   }, []);
 
-const manejarArchivo = (e) => {
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [busqueda, filtroEstatus]);
+
+  const manejarArchivo = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -207,107 +214,167 @@ const manejarArchivo = (e) => {
   };
 
   const alumnosFiltrados = alumnos.filter(alumno => {
-      const nombreSeguro = alumno.nombre_completo || '';
-      
-      const cumpleBusqueda =
-        nombreSeguro.toLowerCase().includes(busqueda.toLowerCase()) ||
-        alumno.matricula.toString().includes(busqueda);
-      
-      const cumpleEstatus = filtroEstatus === '' || alumno.estatus === filtroEstatus;
-      return cumpleBusqueda && cumpleEstatus;
-    });
+    const nombreSeguro = alumno.nombre_completo || '';
+    
+    const cumpleBusqueda =
+      nombreSeguro.toLowerCase().includes(busqueda.toLowerCase()) ||
+      alumno.matricula.toString().includes(busqueda);
+    
+    const cumpleEstatus = filtroEstatus === '' || alumno.estatus === filtroEstatus;
+    return cumpleBusqueda && cumpleEstatus;
+  });
+
+  const indiceUltimoAlumno = paginaActual * elementosPorPagina;
+  const indicePrimerAlumno = indiceUltimoAlumno - elementosPorPagina;
+  const alumnosPaginados = alumnosFiltrados.slice(indicePrimerAlumno, indiceUltimoAlumno);
+  const totalPaginas = Math.ceil(alumnosFiltrados.length / elementosPorPagina);
 
   return (
-    <div className="flex flex-col gap-6 relative">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Listado de Alumnos Inactivos</h1>
+    <div className="flex flex-col gap-4 relative w-full h-full">
+      <div className="flex flex-wrap gap-4 bg-gray-50 p-3 rounded-md border border-gray-200 items-center justify-between">
+        <div className="flex flex-1 gap-4 min-w-[300px]">
+          <input 
+            type="text" 
+            placeholder="Buscar por nombre o matrícula..." 
+            className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:border-[#050C1C]"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+          />
+          <select 
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:border-[#050C1C] bg-white min-w-[200px]"
+            value={filtroEstatus}
+            onChange={(e) => setFiltroEstatus(e.target.value)}
+          >
+            <option value="">Todos los Estatus</option>
+            {Object.entries(catalogoEstatus).map(([clave, etiqueta]) => (
+              <option key={clave} value={clave}>
+                {clave} - {etiqueta}
+              </option>
+            ))}
+          </select>
+        </div>
         <button 
           onClick={() => setModalImportarAbierto(true)}
-          className="bg-[#050C1C] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#1A2233] transition-colors"
+          className="bg-[#050C1C] text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-[#1A2233] transition-colors whitespace-nowrap"
         >
           Importar Alumnos
         </button>
       </div>
 
-      <div className="flex gap-4 bg-gray-50 p-4 rounded-md border border-gray-200">
-        <input 
-          type="text" 
-          placeholder="Buscar por nombre o matrícula..." 
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[#050C1C]"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-        />
-        <select 
-          className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[#050C1C] bg-white min-w-[300px]"
-          value={filtroEstatus}
-          onChange={(e) => setFiltroEstatus(e.target.value)}
-        >
-          <option value="">Todos los Estatus de Baja</option>
-          {Object.entries(catalogoEstatus).map(([clave, etiqueta]) => (
-            <option key={clave} value={clave}>
-              {clave} - {etiqueta}
-            </option>
-          ))}
-        </select>
-      </div>
+      <div className="bg-white border border-gray-200 rounded-md overflow-hidden flex flex-col">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-gray-600">
+            <thead className="bg-[#050C1C] text-gray-300">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">Matrícula</th>
+                <th className="px-4 py-2.5 font-medium">Nombre Completo</th>
+                <th className="px-4 py-2.5 font-medium">Programa</th>
+                <th className="px-4 py-2.5 font-medium">Estatus</th>
+                <th className="px-4 py-2.5 font-medium text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {cargandoDatos ? (
+                <tr>
+                  <td colSpan="5" className="px-4 py-6 text-center text-gray-500">
+                    Cargando datos...
+                  </td>
+                </tr>
+              ) : alumnosPaginados.length > 0 ? (
+                alumnosPaginados.map((alumno, index) => {
+                  const estatusEstilo = ESTATUS_COLORS[alumno.estatus] || 'bg-gray-100 text-gray-800 border-gray-200';
+                  const estatusEtiqueta = catalogoEstatus[alumno.estatus] || alumno.estatus;
 
-      <div className="bg-white border border-gray-200 rounded-md overflow-hidden">
-        <table className="w-full text-left text-sm text-gray-600">
-          <thead className="bg-[#050C1C] text-gray-300">
-            <tr>
-              <th className="px-6 py-4 font-medium">Matrícula</th>
-              <th className="px-6 py-4 font-medium">Nombre Completo</th>
-              <th className="px-6 py-4 font-medium">Programa</th>
-              <th className="px-6 py-4 font-medium">Estatus</th>
-              <th className="px-6 py-4 font-medium text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {cargandoDatos ? (
-              <tr>
-                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                  Cargando datos...
-                </td>
-              </tr>
-            ) : alumnosFiltrados.length > 0 ? (
-              alumnosFiltrados.map((alumno, index) => {
-                const estatusEstilo = ESTATUS_COLORS[alumno.estatus] || 'bg-gray-100 text-gray-800 border-gray-200';
-                const estatusEtiqueta = catalogoEstatus[alumno.estatus] || alumno.estatus;
+                  return (
+                    <tr key={`${alumno.matricula}-${index}`} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-2">{alumno.matricula}</td>
+                      <td className="px-4 py-2 font-medium text-gray-900">{alumno.nombre_completo}</td>
+                      <td className="px-4 py-2">{alumno.programa}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold tracking-wide border ${estatusEstilo}`} title={estatusEtiqueta}>
+                          {alumno.estatus}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <Link to={`/alumno/${alumno.matricula}`} className="inline-flex items-center justify-center gap-1.5 bg-[#050C1C] text-white px-3 py-1 rounded-md text-xs font-medium hover:bg-[#1A2233] transition-colors">
+                          <EyeIcon className="w-3.5 h-3.5" />
+                          Detalles
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : alumnos.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="px-4 py-6 text-center text-gray-500">
+                    La base de datos está vacía. Importa un archivo para visualizar registros.
+                  </td>
+                </tr>
+              ) : (
+                <tr>
+                  <td colSpan="5" className="px-4 py-6 text-center text-gray-500">
+                    No se encontraron alumnos con los criterios de búsqueda actuales.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
-                return (
-                  <tr key={`${alumno.matricula}-${index}`} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">{alumno.matricula}</td>
-                    <td className="px-6 py-4 font-medium text-gray-900">{alumno.nombre_completo}</td>
-                    <td className="px-6 py-4">{alumno.programa}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded text-xs font-bold tracking-wide border ${estatusEstilo}`} title={estatusEtiqueta}>
-                        {alumno.estatus}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <Link to={`/alumno/${alumno.matricula}`} className="inline-flex items-center justify-center gap-2 bg-[#050C1C] text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-[#1A2233] transition-colors">
-                        <EyeIcon className="w-4 h-4" />
-                        Detalles
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })
-            ) : alumnos.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                  La base de datos está vacía. Importa un archivo para visualizar registros.
-                </td>
-              </tr>
-            ) : (
-              <tr>
-                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                  No se encontraron alumnos con los criterios de búsqueda actuales.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {alumnosFiltrados.length > 0 && (
+          <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-2.5">
+            <div className="flex flex-1 justify-between sm:hidden">
+              <button
+                onClick={() => setPaginaActual(prev => Math.max(prev - 1, 1))}
+                disabled={paginaActual === 1}
+                className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <button
+                onClick={() => setPaginaActual(prev => Math.min(prev + 1, totalPaginas))}
+                disabled={paginaActual === totalPaginas}
+                className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Siguiente
+              </button>
+            </div>
+            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Mostrando del <span className="font-medium">{indicePrimerAlumno + 1}</span> al{' '}
+                  <span className="font-medium">
+                    {Math.min(indiceUltimoAlumno, alumnosFiltrados.length)}
+                  </span>{' '}
+                  de <span className="font-medium">{alumnosFiltrados.length}</span> resultados
+                </p>
+              </div>
+              <div>
+                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                  <button
+                    onClick={() => setPaginaActual(prev => Math.max(prev - 1, 1))}
+                    disabled={paginaActual === 1}
+                    className="relative inline-flex items-center rounded-l-md px-2 py-1.5 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Anterior</span>
+                    <span className="text-sm px-2">Anterior</span>
+                  </button>
+                  <div className="relative inline-flex items-center px-3 py-1.5 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300">
+                    Página {paginaActual} de {totalPaginas}
+                  </div>
+                  <button
+                    onClick={() => setPaginaActual(prev => Math.min(prev + 1, totalPaginas))}
+                    disabled={paginaActual === totalPaginas}
+                    className="relative inline-flex items-center rounded-r-md px-2 py-1.5 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Siguiente</span>
+                    <span className="text-sm px-2">Siguiente</span>
+                  </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {modalImportarAbierto && (
