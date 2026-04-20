@@ -20,8 +20,41 @@ export default function PlanesEstudio() {
   const [procesandoPDF, setProcesandoPDF] = useState(false);
   const [nombreArchivoPDF, setNombreArchivoPDF] = useState('');
 
+  const [modalDetallesAbierto, setModalDetallesAbierto] = useState(false);
+  const [planDetalleSeleccionado, setPlanDetalleSeleccionado] = useState(null);
+  const [materiasDetalle, setMateriasDetalle] = useState([]);
+  const [cargandoMaterias, setCargandoMaterias] = useState(false);
+
   const [paginaActual, setPaginaActual] = useState(1);
   const elementosPorPagina = 10;
+
+  const abrirModalDetalles = async (plan) => {
+    setPlanDetalleSeleccionado(plan);
+    setModalDetallesAbierto(true);
+    setCargandoMaterias(true);
+    setMateriasDetalle([]);
+
+    try {
+      const materiasRef = collection(db, 'planes', plan.id, 'materias');
+      const snapshot = await getDocs(materiasRef);
+      const materias = [];
+      snapshot.forEach(doc => {
+        materias.push({ id: doc.id, ...doc.data() });
+      });
+      setMateriasDetalle(materias);
+    } catch (error) {
+      console.error("Error al cargar materias:", error);
+      alert("Error al obtener la lista de materias desde la base de datos.");
+    } finally {
+      setCargandoMaterias(false);
+    }
+  };
+
+  const cerrarModalDetalles = () => {
+    setModalDetallesAbierto(false);
+    setPlanDetalleSeleccionado(null);
+    setMateriasDetalle([]);
+  };
 
   const cargarPlanes = async () => {
     setCargandoDatos(true);
@@ -248,7 +281,10 @@ const guardarImportacion = async () => {
                         >
                           <PencilSquareIcon className="w-3.5 h-3.5" />
                         </button>
-                        <button className="inline-flex items-center justify-center gap-1.5 bg-[#050C1C] text-white px-3 py-1 rounded-md text-xs font-medium hover:bg-[#1A2233] transition-colors">
+                        <button 
+                          onClick={() => abrirModalDetalles(plan)}
+                          className="inline-flex items-center justify-center gap-1.5 bg-[#050C1C] text-white px-3 py-1 rounded-md text-xs font-medium hover:bg-[#1A2233] transition-colors"
+                        >
                           <EyeIcon className="w-3.5 h-3.5" />
                           Detalles
                         </button>
@@ -460,6 +496,64 @@ const guardarImportacion = async () => {
           </div>
         </div>
       )}
+
+
+      {/* Modal Detalles del Plan */}
+      {modalDetallesAbierto && planDetalleSeleccionado && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-md shadow-lg w-full max-w-3xl flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">Detalles del Plan de Estudios</h2>
+                <p className="text-sm text-gray-600">
+                  <span className="font-bold text-[#050C1C]">{planDetalleSeleccionado.codigo}</span> - {planDetalleSeleccionado.nombre}
+                </p>
+              </div>
+              <button onClick={cerrarModalDetalles} className="text-gray-400 hover:text-gray-800 text-2xl font-bold leading-none">&times;</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-md">
+              <table className="w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-gray-700 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium border-b border-gray-200 w-1/4">Clave</th>
+                    <th className="px-4 py-2.5 font-medium border-b border-gray-200">Materia</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {cargandoMaterias ? (
+                    <tr>
+                      <td colSpan="2" className="px-4 py-6 text-center text-gray-500">Cargando listado de materias...</td>
+                    </tr>
+                  ) : materiasDetalle.length > 0 ? (
+                    materiasDetalle.map((materia) => (
+                      <tr key={materia.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 font-medium text-gray-900">{materia.clave}</td>
+                        <td className="px-4 py-2">{materia.nombre}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="2" className="px-4 py-6 text-center text-gray-500">No hay materias registradas para este plan.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-4 mt-4 border-t border-gray-100">
+              <button 
+                onClick={cerrarModalDetalles}
+                className="bg-[#050C1C] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#1A2233] transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+
+    
   );
 }
