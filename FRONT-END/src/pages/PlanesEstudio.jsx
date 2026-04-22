@@ -3,8 +3,12 @@ import { EyeIcon, ArrowUpTrayIcon, PencilSquareIcon } from '@heroicons/react/24/
 import { procesarPDF } from '../utils/procesarPDF';
 import { collection, doc, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function PlanesEstudio() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [planes, setPlanes] = useState([]); 
   const [busqueda, setBusqueda] = useState('');
   const [cargandoDatos, setCargandoDatos] = useState(false);
@@ -71,6 +75,22 @@ export default function PlanesEstudio() {
       setCargandoDatos(false);
     }
   };
+
+  useEffect(() => {
+    if (location.state && location.state.codigoPreCargado) {
+      setPlanEnEdicion(null);
+      setDatosPlan({ 
+        codigo: location.state.codigoPreCargado, 
+        nombre: '', 
+        nivel: 'Licenciatura' 
+      });
+      setMateriasPlan([]);
+      setNombreArchivoPDF('');
+      setModalImportarPlanes(true);
+      
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, navigate]);
 
   useEffect(() => {
     cargarPlanes();
@@ -381,7 +401,7 @@ const guardarImportacion = async () => {
                   placeholder="Ej. LIC-SYSC-18" 
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[#050C1C]"
                   value={datosPlan.codigo}
-                  onChange={(e) => setDatosPlan({...datosPlan, codigo: e.target.value.toUpperCase()})}
+                  onChange={(e) => setDatosPlan({...datosPlan, codigo: e.target.value.toUpperCase().replace(/\s/g, '')})}
                 />
               </div>
               <div>

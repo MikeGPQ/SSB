@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { EyeIcon } from '@heroicons/react/24/outline';
 import Papa from 'papaparse';
 import { collection, doc, getDoc, getDocs, writeBatch } from 'firebase/firestore';
@@ -25,6 +25,9 @@ const ESTATUS_COLORS = {
 };
 
 export default function ListadoAlumnos() {
+  const navigate = useNavigate();
+  const [codigosPlanes, setCodigosPlanes] = useState([]);
+
   const [alumnos, setAlumnos] = useState([]);
   const [catalogoEstatus, setCatalogoEstatus] = useState({});
   const [busqueda, setBusqueda] = useState('');
@@ -66,6 +69,15 @@ export default function ListadoAlumnos() {
         } else {
           setCatalogoEstatus({});
         }
+
+        const planesSnapshot = await getDocs(collection(db, 'planes'));
+        const codigos = [];
+        planesSnapshot.forEach(doc => {
+          if (doc.data().codigo) {
+            codigos.push(doc.data().codigo.toUpperCase());
+          }
+        });
+        setCodigosPlanes(codigos);
 
         await cargarAlumnos(); 
       } catch (error) {
@@ -289,7 +301,26 @@ export default function ListadoAlumnos() {
                     <tr key={`${alumno.matricula}-${index}`} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-2">{alumno.matricula}</td>
                       <td className="px-4 py-2 font-medium text-gray-900">{alumno.nombre_completo}</td>
-                      <td className="px-4 py-2">{alumno.programa}</td>
+                      <td className="px-4 py-2">
+                        {!alumno.programa ? (
+                          <span className="text-gray-400 italic">N/A</span>
+                        ) : codigosPlanes.includes(alumno.programa.toUpperCase()) ? (
+                          <span className="text-gray-900 font-medium">{alumno.programa}</span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400 italic" title="Plan no registrado en el sistema">
+                              {alumno.programa}
+                            </span>
+                            <button
+                              onClick={() => navigate('planes-estudio', { state: { codigoPreCargado: alumno.programa } })}
+                              className="inline-flex items-center justify-center bg-gray-100 border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-[10px] uppercase font-bold hover:bg-gray-200 transition-colors whitespace-nowrap"
+                              title="Crear plan de estudios faltante"
+                            >
+                              + Crear Plan
+                            </button>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold tracking-wide border ${estatusEstilo}`} title={estatusEtiqueta}>
                           {alumno.estatus}

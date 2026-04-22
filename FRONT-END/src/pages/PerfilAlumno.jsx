@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { 
   EnvelopeIcon, 
@@ -8,17 +8,34 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
   XCircleIcon,
-  ClockIcon
+  ClockIcon,
+  ArrowUpTrayIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
+import { procesarSituacionAcademica } from '../utils/procesarSituacionAcademica';
 
 export default function PerfilAlumno() {
+  const [diccionarioMaterias, setDiccionarioMaterias] = useState({});
   const { matricula } = useParams();
   const navigate = useNavigate();
+
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [datosModal, setDatosModal] = useState({ titulo: '', lista: [], color: '' });
   
   const [alumno, setAlumno] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [comentario, setComentario] = useState('');
   const [activeTab, setActiveTab] = useState('administrativa');
+  
+  const [procesandoPDF, setProcesandoPDF] = useState(false);
+  
+  const [materiasPlan, setMateriasPlan] = useState([]);
+  const [planExiste, setPlanExiste] = useState(true);
+
+  const abrirModalDetalle = (titulo, lista, color) => {
+    setDatosModal({ titulo, lista, color });
+    setModalAbierto(true);
+  };
 
   useEffect(() => {
     const obtenerAlumno = async () => {
@@ -34,11 +51,9 @@ export default function PerfilAlumno() {
             matricula: docSnap.id,
             nombre_completo: nombreEnsamblado,
             ...data,
-            // Valores por defecto para evitar errores al mapear arreglos vacíos
             bitacora_llamadas: data.bitacora_llamadas || [],
             materias_aprobadas: data.materias_aprobadas || [],
-            materias_reprobadas: data.materias_reprobadas || [],
-            materias_faltantes: data.materias_faltantes || []
+            materias_reprobadas: data.materias_reprobadas || []
           });
         } else {
           setAlumno(null);
@@ -52,6 +67,48 @@ export default function PerfilAlumno() {
 
     obtenerAlumno();
   }, [matricula]);
+
+  useEffect(() => {
+    const obtenerPlanEstudio = async () => {
+      if (alumno && alumno.programa) {
+        try {
+          const planesQuery = query(collection(db, 'planes'), where('codigo', '==', alumno.programa));
+          const planesSnap = await getDocs(planesQuery);
+          
+          if (planesSnap.empty) {
+            setPlanExiste(false);
+            setMateriasPlan([]);
+            setDiccionarioMaterias({});
+          } else {
+            setPlanExiste(true);
+            const planDoc = planesSnap.docs[0];
+            const materiasSnap = await getDocs(collection(db, 'planes', planDoc.id, 'materias'));
+            
+            const claves = [];
+            const diccionario = {};
+            
+            materiasSnap.docs.forEach(d => {
+              const data = d.data();
+              const clave = (data.clave || d.id).toUpperCase();
+              claves.push(clave);
+              diccionario[clave] = data.nombre || 'Nombre no disponible';
+            });
+
+            setMateriasPlan(claves);
+            setDiccionarioMaterias(diccionario);
+          }
+        } catch (error) {
+          console.error("Error al cargar el plan de estudios:", error);
+        }
+      } else if (alumno) {
+        setPlanExiste(false);
+        setMateriasPlan([]);
+        setDiccionarioMaterias({});
+      }
+    };
+
+    obtenerPlanEstudio();
+  }, [alumno?.programa]);
 
   if (cargando) {
     return (
@@ -69,6 +126,104 @@ export default function PerfilAlumno() {
       </div>
     );
   }
+
+  const handleCargarSituacion = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setProcesandoPDF(true);
+    try {
+      const resultados = await procesarSituacionAcademica(file);
+
+      if (resultados.length === 0) {
+        alert("No se detectaron materias. Verifica el formato del PDF.");
+        setProcesandoPDF(false);
+        return;
+      }
+
+      const aprobadas = [];
+      const reprobadas = [];
+
+      resultados.forEach(res => {
+        const claveStr = res.clave.toUpperCase();
+        if (res.aprobada) {
+          aprobadas.push(claveStr);
+        } else {
+          reprobadas.push(claveStr);
+        }
+      });
+
+      const alumnoRef = doc(db, 'alumnos', matricula);
+      await updateDoc(alumnoRef, {
+        materias_aprobadas: aprobadas,
+        materias_reprobadas: reprobadas
+      });
+
+      setAlumno(prev => ({
+        ...prev,
+        materias_aprobadas: aprobadas,
+        materias_reprobadas: reprobadas
+      }));
+
+    } catch (error) {
+      console.error("Error procesando Situación Académica:", error);
+      alert("Error al leer y procesar el documento PDF.");
+    } finally {
+      setProcesandoPDF(false);
+      e.target.value = ''; 
+    }
+  };
+
+  const extraerClave = (materia) => {
+    if (typeof materia === 'object') return (materia.id || materia.clave || '').toUpperCase();
+    return materia.toUpperCase();
+  };
+
+  const listaAprobadas = (alumno.materias_aprobadas || []).map(extraerClave);
+  const listaReprobadas = (alumno.materias_reprobadas || []).map(extraerClave);
+  
+  const faltantesCalculadas = materiasPlan.filter(
+    clavePlan => !listaAprobadas.includes(clavePlan) && !listaReprobadas.includes(clavePlan)
+  );
+
+  const moverMateria = async (clave, destino) => {
+    const nuevasAprobadas = listaAprobadas.filter(c => c !== clave);
+    const nuevasReprobadas = listaReprobadas.filter(c => c !== clave);
+
+    if (destino === 'aprobadas') nuevasAprobadas.push(clave);
+    if (destino === 'reprobadas') nuevasReprobadas.push(clave);
+
+    setAlumno(prev => ({
+      ...prev,
+      materias_aprobadas: nuevasAprobadas,
+      materias_reprobadas: nuevasReprobadas
+    }));
+
+    try {
+      const alumnoRef = doc(db, 'alumnos', matricula);
+      await updateDoc(alumnoRef, {
+        materias_aprobadas: nuevasAprobadas,
+        materias_reprobadas: nuevasReprobadas
+      });
+    } catch (error) {
+      console.error("Error al mover la materia:", error);
+      alert("Error al sincronizar con la base de datos.");
+    }
+  };
+
+  const handleDragStart = (e, clave) => {
+    e.dataTransfer.setData('clave', clave);
+  };
+
+  const handleDrop = (e, destino) => {
+    e.preventDefault();
+    const clave = e.dataTransfer.getData('clave');
+    if (clave) moverMateria(clave, destino);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault(); 
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -125,6 +280,7 @@ export default function PerfilAlumno() {
       </div>
 
       <div className="pt-2">
+        {/* --- PESTAÑA ADMINISTRATIVA --- */}
         {activeTab === 'administrativa' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
@@ -133,15 +289,13 @@ export default function PerfilAlumno() {
                 <div className="col-span-2 flex items-center justify-between bg-gray-50 p-3 rounded-md border border-gray-100 mb-2">
                   <div>
                     <p className="text-gray-500 text-xs uppercase tracking-wider">Plan de Estudios Registrado</p>
-                    <p className="font-bold text-gray-800 text-base">{alumno.plan_estudio_registrado || 'No registrado'}</p>
+                    <p className="font-bold text-gray-800 text-base">{alumno.programa || 'No registrado'}</p>
                   </div>
                   <div>
-                    {alumno.plan_actual === null || alumno.plan_actual === undefined ? (
-                      <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-bold rounded border border-gray-200">N/A</span>
-                    ) : alumno.plan_actual ? (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded">Vigente</span>
+                    {!planExiste ? (
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded border border-yellow-200">Plan no encontrado en DB</span>
                     ) : (
-                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded border border-yellow-200">Desactualizado</span>
+                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded">Plan localizado</span>
                     )}
                   </div>
                 </div>
@@ -178,70 +332,136 @@ export default function PerfilAlumno() {
           </div>
         )}
 
+        {/* --- PESTAÑA ACADÉMICA --- */}
         {activeTab === 'academica' && (
           <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
-            {!alumno.plan_actual && (
+            <div className="flex flex-wrap justify-between items-center mb-6 pb-4 border-b border-gray-100 gap-4">
+              <h2 className="text-lg font-bold text-[#050C1C]">Resumen Académico (Claves)</h2>
+              <div>
+                <input 
+                  type="file" 
+                  accept=".pdf"
+                  id="upload-situacion"
+                  className="hidden"
+                  onChange={handleCargarSituacion}
+                  disabled={procesandoPDF}
+                />
+                <label 
+                  htmlFor="upload-situacion"
+                  className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    procesandoPDF 
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                      : 'bg-[#050C1C] text-white hover:bg-[#1A2233]'
+                  }`}
+                >
+                  <ArrowUpTrayIcon className="w-4 h-4" />
+                  {procesandoPDF ? 'Analizando documento...' : 'Cargar Situación Académica'}
+                </label>
+              </div>
+            </div>
+
+            {!planExiste && (
               <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md flex gap-3 items-start text-yellow-800 text-sm">
                 <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 text-yellow-600" />
                 <div>
-                  <p className="font-bold text-yellow-900">Plan de estudios desactualizado</p>
-                  <p>El alumno cursó el {alumno.plan_estudio_registrado}. Verifica equivalencias de materias aprobadas respecto al plan vigente.</p>
+                  <p className="font-bold text-yellow-900">Plan de estudios desactualizado o no registrado</p>
+                  <p>Falta actualizar o crear el plan de estudios <strong>{alumno.programa || 'correspondiente'}</strong> en el sistema para poder comparar y calcular las materias faltantes.</p>
                 </div>
               </div>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
+              {/* APROBADAS */}
+              <div 
+                onDragOver={handleDragOver} 
+                onDrop={(e) => handleDrop(e, 'aprobadas')}
+                className="bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 transition-colors"
+              >
                 <h3 className="font-semibold text-gray-800 mb-3 flex items-center justify-between">
                   <span className="flex items-center gap-2"><CheckCircleIcon className="w-5 h-5 text-green-600" /> Aprobadas</span>
-                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">{alumno.materias_aprobadas.length}</span>
+                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">{listaAprobadas.length}</span>
                 </h3>
-                <ul className="space-y-2 text-sm">
-                  {alumno.materias_aprobadas.map((materia, idx) => (
-                    <li key={materia.id || idx} className="p-3 bg-gray-50 border border-gray-200 rounded-md">
-                      <p className="font-medium text-gray-800">{materia.nombre}</p>
-                      <p className="text-xs text-gray-500 mb-1">Clave: {materia.id}</p>
+                <ul className="flex flex-col gap-2 text-sm min-h-[150px]">
+                  {listaAprobadas.map((clave, idx) => (
+                    <li 
+                      key={idx} 
+                      draggable 
+                      onDragStart={(e) => handleDragStart(e, clave)}
+                      className="p-2 bg-white border-l-4 border-l-green-500 border border-gray-200 rounded shadow-sm text-center cursor-move hover:shadow-md transition-all"
+                    >
+                      <div className="font-bold text-gray-800 text-sm">{diccionarioMaterias[clave] || 'Materia desconocida'}</div>
+                      <div className="text-gray-500 text-xs mt-0.5 font-mono">{clave}</div>
                     </li>
                   ))}
-                  {alumno.materias_aprobadas.length === 0 && <li className="text-gray-500 text-xs">Sin registros</li>}
+                  {listaAprobadas.length === 0 && <li className="text-gray-400 text-xs text-center py-6 flex items-center justify-center h-full">Arrastra materias aquí</li>}
                 </ul>
               </div>
 
-              <div>
+              {/* REPROBADAS */}
+              <div 
+                onDragOver={handleDragOver} 
+                onDrop={(e) => handleDrop(e, 'reprobadas')}
+                className="bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 transition-colors"
+              >
                 <h3 className="font-semibold text-gray-800 mb-3 flex items-center justify-between">
                   <span className="flex items-center gap-2"><XCircleIcon className="w-5 h-5 text-red-600" /> Reprobadas</span>
-                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">{alumno.materias_reprobadas.length}</span>
+                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">{listaReprobadas.length}</span>
                 </h3>
-                <ul className="space-y-2 text-sm">
-                  {alumno.materias_reprobadas.map((materia, idx) => (
-                    <li key={materia.id || idx} className="p-3 bg-red-50 border border-red-100 rounded-md">
-                      <p className="font-medium text-red-900">{materia.nombre}</p>
-                      <p className="text-xs text-red-700">Clave: {materia.id}</p>
+                <ul className="flex flex-col gap-2 text-sm min-h-[150px]">
+                  {listaReprobadas.map((clave, idx) => (
+                    <li 
+                      key={idx} 
+                      draggable 
+                      onDragStart={(e) => handleDragStart(e, clave)}
+                      className="p-2 bg-white border-l-4 border-l-red-500 border border-gray-200 rounded shadow-sm text-center cursor-move hover:shadow-md transition-all"
+                    >
+                      <div className="font-bold text-gray-800 text-sm">{diccionarioMaterias[clave] || 'Materia desconocida'}</div>
+                      <div className="text-gray-500 text-xs mt-0.5 font-mono">{clave}</div>
                     </li>
                   ))}
-                  {alumno.materias_reprobadas.length === 0 && <li className="text-gray-500 text-xs">Sin registros</li>}
+                  {listaReprobadas.length === 0 && <li className="text-gray-400 text-xs text-center py-6 flex items-center justify-center h-full">Arrastra materias aquí</li>}
                 </ul>
               </div>
 
-              <div>
+              {/* FALTANTES */}
+              <div 
+                onDragOver={handleDragOver} 
+                onDrop={(e) => handleDrop(e, 'faltantes')}
+                className="bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 transition-colors"
+              >
                 <h3 className="font-semibold text-gray-800 mb-3 flex items-center justify-between">
                   <span className="flex items-center gap-2"><ClockIcon className="w-5 h-5 text-blue-600" /> Faltantes</span>
-                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">{alumno.materias_faltantes.length}</span>
+                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">
+                    {planExiste ? faltantesCalculadas.length : '?'}
+                  </span>
                 </h3>
-                <ul className="space-y-2 text-sm">
-                  {alumno.materias_faltantes.map((materia, idx) => (
-                    <li key={materia.id || idx} className="p-3 bg-blue-50 border border-blue-100 rounded-md">
-                      <p className="font-medium text-blue-900">{materia.nombre}</p>
-                      <p className="text-xs text-blue-700">Clave: {materia.id}</p>
-                    </li>
-                  ))}
-                  {alumno.materias_faltantes.length === 0 && <li className="text-gray-500 text-xs">Sin registros</li>}
-                </ul>
+                
+                {planExiste ? (
+                  <ul className="flex flex-col gap-2 text-sm min-h-[150px]">
+                    {faltantesCalculadas.map((clave, idx) => (
+                      <li 
+                        key={idx} 
+                        draggable 
+                        onDragStart={(e) => handleDragStart(e, clave)}
+                        className="p-2 bg-white border-l-4 border-l-blue-500 border border-gray-200 rounded shadow-sm text-center cursor-move hover:shadow-md transition-all"
+                      >
+                        <div className="font-bold text-gray-800 text-sm">{diccionarioMaterias[clave] || 'Materia desconocida'}</div>
+                        <div className="text-gray-500 text-xs mt-0.5 font-mono">{clave}</div>
+                      </li>
+                    ))}
+                    {faltantesCalculadas.length === 0 && <li className="text-gray-400 text-xs text-center py-6 flex items-center justify-center h-full">Arrastra materias aquí</li>}
+                  </ul>
+                ) : (
+                  <div className="p-3 border border-dashed border-gray-300 rounded text-center text-gray-500 text-sm">
+                    Registra el plan de estudios para ver este cálculo.
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
 
+        {/* --- PESTAÑA CONTACTO --- */}
         {activeTab === 'contacto' && (
           <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-1 border-r border-gray-100 pr-4">
