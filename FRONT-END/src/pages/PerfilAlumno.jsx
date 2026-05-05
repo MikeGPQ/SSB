@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { 
   EnvelopeIcon, 
@@ -10,11 +10,21 @@ import {
   XCircleIcon,
   ClockIcon,
   ArrowUpTrayIcon,
-  XMarkIcon
+  XMarkIcon,
+  ArrowsRightLeftIcon
 } from '@heroicons/react/24/outline';
 import { procesarSituacionAcademica } from '../utils/procesarSituacionAcademica';
 
 export default function PerfilAlumno() {
+  const [modoEquivalencia, setModoEquivalencia] = useState(false);
+  const [planesConEquivalencias, setPlanesConEquivalencias] = useState([]);
+  const [planEquivalenciaSeleccionado, setPlanEquivalenciaSeleccionado] = useState('');
+  const [mapaEquivalencias, setMapaEquivalencias] = useState({});
+  const [cargandoEquivalencias, setCargandoEquivalencias] = useState(false);
+
+  const [listaPlanes, setListaPlanes] = useState([]);
+  const [actualizandoPlan, setActualizandoPlan] = useState(false);
+
   const [diccionarioMaterias, setDiccionarioMaterias] = useState({});
   const { matricula } = useParams();
   const navigate = useNavigate();
@@ -36,6 +46,70 @@ export default function PerfilAlumno() {
     setDatosModal({ titulo, lista, color });
     setModalAbierto(true);
   };
+
+  useEffect(() => {
+  if (!modoEquivalencia) {
+    setPlanEquivalenciaSeleccionado('');
+    setMapaEquivalencias({});
+    return;
+  }
+
+  const cargarPlanesValidos = async () => {
+    setCargandoEquivalencias(true);
+    try {
+      const planesSnap = await getDocs(collection(db, 'planes'));
+      const planesValidos = [];
+
+      for (const documento of planesSnap.docs) {
+        const equivalenciasRef = collection(db, 'planes', documento.id, 'equivalencias');
+        const q = query(equivalenciasRef, limit(1));
+        const equivalenciasSnap = await getDocs(q);
+        
+        if (!equivalenciasSnap.empty) {
+          planesValidos.push({ id: documento.id, codigo: documento.data().codigo });
+        }
+      }
+      setPlanesConEquivalencias(planesValidos);
+    } catch (error) {
+      console.error("Error al cargar planes para equivalencias:", error);
+    } finally {
+      setCargandoEquivalencias(false);
+    }
+  };
+
+  cargarPlanesValidos();
+}, [modoEquivalencia]);
+
+  useEffect(() => {
+    if (!planEquivalenciaSeleccionado) return;
+
+    const cargarMapa = async () => {
+      setCargandoEquivalencias(true);
+      try {
+        const planObj = planesConEquivalencias.find(p => p.codigo === planEquivalenciaSeleccionado);
+        if (!planObj) return;
+
+        const equivalenciasRef = collection(db, 'planes', planObj.id, 'equivalencias');
+        const equivalenciasSnap = await getDocs(equivalenciasRef);
+        
+        const mapa = {};
+        equivalenciasSnap.forEach(doc => {
+          const data = doc.data();
+          if (data.codigo_equivalente && data.codigo_equivalente !== "null") {
+            mapa[data.codigo_original] = data.codigo_equivalente;
+          }
+        });
+        
+        setMapaEquivalencias(mapa);
+      } catch (error) {
+        console.error("Error al obtener el mapa de equivalencias:", error);
+      } finally {
+        setCargandoEquivalencias(false);
+      }
+    };
+
+    cargarMapa();
+  }, [planEquivalenciaSeleccionado, planesConEquivalencias]);
 
   useEffect(() => {
     const obtenerAlumno = async () => {
@@ -70,8 +144,12 @@ export default function PerfilAlumno() {
 
   useEffect(() => {
     const obtenerPlanEstudio = async () => {
-      if (alumno && alumno.programa) {
-        try {
+      try {
+        const planesTotalesSnap = await getDocs(collection(db, 'planes'));
+        const planesData = planesTotalesSnap.docs.map(d => d.data().codigo);
+        setListaPlanes(planesData);
+
+        if (alumno && alumno.programa) {
           const planesQuery = query(collection(db, 'planes'), where('codigo', '==', alumno.programa));
           const planesSnap = await getDocs(planesQuery);
           
@@ -97,13 +175,13 @@ export default function PerfilAlumno() {
             setMateriasPlan(claves);
             setDiccionarioMaterias(diccionario);
           }
-        } catch (error) {
-          console.error("Error al cargar el plan de estudios:", error);
+        } else if (alumno) {
+          setPlanExiste(false);
+          setMateriasPlan([]);
+          setDiccionarioMaterias({});
         }
-      } else if (alumno) {
-        setPlanExiste(false);
-        setMateriasPlan([]);
-        setDiccionarioMaterias({});
+      } catch (error) {
+        console.error("Error al cargar el plan de estudios:", error);
       }
     };
 
@@ -117,6 +195,24 @@ export default function PerfilAlumno() {
       </div>
     );
   }
+
+  const handleCambiarPlan = async (nuevoPlan) => {
+    if (!nuevoPlan || nuevoPlan === alumno.programa) return;
+    
+    setActualizandoPlan(true);
+    try {
+      const alumnoRef = doc(db, 'alumnos', matricula);
+      await updateDoc(alumnoRef, { programa: nuevoPlan });
+      
+      setAlumno(prev => ({ ...prev, programa: nuevoPlan }));
+      alert(`Plan de estudios actualizado a ${nuevoPlan}`);
+    } catch (error) {
+      console.error("Error al actualizar el plan:", error);
+      alert("Error al guardar el nuevo plan de estudios.");
+    } finally {
+      setActualizandoPlan(false);
+    }
+  };
 
   if (!alumno) {
     return (
@@ -221,6 +317,47 @@ export default function PerfilAlumno() {
     if (clave) moverMateria(clave, destino);
   };
 
+  const renderMateriaCard = (clave, listaOrigen) => {
+  const isEquivalenciaMode = modoEquivalencia && planEquivalenciaSeleccionado;
+  const tieneEquivalencia = isEquivalenciaMode && !!mapaEquivalencias[clave];
+  const claveEquivalente = tieneEquivalencia ? mapaEquivalencias[clave] : null;
+
+  let baseClasses = "p-2 border rounded shadow-sm text-center cursor-move transition-all ";
+
+  if (isEquivalenciaMode) {
+    if (tieneEquivalencia) {
+      baseClasses += "bg-indigo-50 border-indigo-400 opacity-100";
+    } else {
+      baseClasses += "bg-gray-100 border-gray-200 opacity-50 grayscale";
+    }
+  } else {
+    if (listaOrigen === 'aprobadas') baseClasses += "bg-white border-l-4 border-l-green-500 border-gray-200 hover:shadow-md";
+    if (listaOrigen === 'reprobadas') baseClasses += "bg-white border-l-4 border-l-red-500 border-gray-200 hover:shadow-md";
+    if (listaOrigen === 'faltantes') baseClasses += "bg-white border-l-4 border-l-blue-500 border-gray-200 hover:shadow-md";
+  }
+
+  return (
+    <li 
+      key={clave} 
+      draggable 
+      onDragStart={(e) => handleDragStart(e, clave)}
+      className={baseClasses}
+    >
+      <div className={`font-bold text-sm ${isEquivalenciaMode && !tieneEquivalencia ? 'text-gray-500' : 'text-gray-800'}`}>
+        {diccionarioMaterias[clave] || 'Materia desconocida'}
+      </div>
+      <div className="text-gray-500 text-xs mt-0.5 font-mono">{clave}</div>
+      
+      {tieneEquivalencia && (
+        <div className="mt-2 text-xs font-bold text-indigo-700 bg-indigo-100 border border-indigo-200 py-1 px-2 rounded-md flex items-center justify-center gap-1">
+          <ArrowsRightLeftIcon className="w-3 h-3 stroke-2" />
+          Equivale a: {claveEquivalente}
+        </div>
+      )}
+    </li>
+  );
+};
+
   const handleDragOver = (e) => {
     e.preventDefault(); 
   };
@@ -287,11 +424,21 @@ export default function PerfilAlumno() {
               <h2 className="text-lg font-bold text-[#050C1C] mb-4 border-b pb-2">Información Administrativa</h2>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="col-span-2 flex items-center justify-between bg-gray-50 p-3 rounded-md border border-gray-100 mb-2">
-                  <div>
-                    <p className="text-gray-500 text-xs uppercase tracking-wider">Plan de Estudios Registrado</p>
-                    <p className="font-bold text-gray-800 text-base">{alumno.programa || 'No registrado'}</p>
+                  <div className="w-2/3">
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Plan de Estudios Registrado</p>
+                    <select 
+                      className={`w-full bg-white border border-gray-300 text-gray-800 font-bold text-base rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#050C1C] focus:border-[#050C1C] transition-colors ${actualizandoPlan ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      value={alumno.programa || ''}
+                      onChange={(e) => handleCambiarPlan(e.target.value)}
+                      disabled={actualizandoPlan}
+                    >
+                      <option value="" disabled>Seleccione un plan</option>
+                      {listaPlanes.map((codigoPlan, index) => (
+                         <option key={index} value={codigoPlan}>{codigoPlan}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div>
+                  <div className="flex items-center">
                     {!planExiste ? (
                       <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded border border-yellow-200">Plan no encontrado en DB</span>
                     ) : (
@@ -335,64 +482,80 @@ export default function PerfilAlumno() {
         {/* --- PESTAÑA ACADÉMICA --- */}
         {activeTab === 'academica' && (
           <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
-            <div className="flex flex-wrap justify-between items-center mb-6 pb-4 border-b border-gray-100 gap-4">
-              <h2 className="text-lg font-bold text-[#050C1C]">Resumen Académico (Claves)</h2>
-              <div>
-                <input 
-                  type="file" 
-                  accept=".pdf"
-                  id="upload-situacion"
-                  className="hidden"
-                  onChange={handleCargarSituacion}
-                  disabled={procesandoPDF}
-                />
-                <label 
-                  htmlFor="upload-situacion"
-                  className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    procesandoPDF 
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                      : 'bg-[#050C1C] text-white hover:bg-[#1A2233]'
-                  }`}
-                >
-                  <ArrowUpTrayIcon className="w-4 h-4" />
-                  {procesandoPDF ? 'Analizando documento...' : 'Cargar Situación Académica'}
-                </label>
+            
+            {/* Encabezado y Controles */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-gray-100 gap-4">
+              <h2 className="text-lg font-bold text-[#050C1C]">Resumen Académico</h2>
+              
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Control de Equivalencias */}
+                <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-md border border-gray-200">
+                  <label className="flex items-center cursor-pointer gap-2">
+                    <div className="relative">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only" 
+                        checked={modoEquivalencia}
+                        onChange={() => setModoEquivalencia(!modoEquivalencia)}
+                      />
+                      <div className={`block w-10 h-6 rounded-full transition-colors ${modoEquivalencia ? 'bg-[#050C1C]' : 'bg-gray-300'}`}></div>
+                      <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${modoEquivalencia ? 'transform translate-x-4' : ''}`}></div>
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">Revisar Equivalencias</span>
+                  </label>
+
+                  {modoEquivalencia && (
+                    <select
+                      className="border border-gray-300 rounded text-sm px-2 py-1 focus:outline-none focus:border-[#050C1C]"
+                      value={planEquivalenciaSeleccionado}
+                      onChange={(e) => setPlanEquivalenciaSeleccionado(e.target.value)}
+                      disabled={cargandoEquivalencias}
+                    >
+                      <option value="">Seleccione plan destino...</option>
+                      {planesConEquivalencias.map(p => (
+                        <option key={p.id} value={p.codigo}>{p.codigo}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Botón Original Cargar Situación */}
+                <div>
+                  <input 
+                    type="file" 
+                    accept=".pdf"
+                    id="upload-situacion"
+                    className="hidden"
+                    onChange={handleCargarSituacion}
+                    disabled={procesandoPDF}
+                  />
+                  <label 
+                    htmlFor="upload-situacion"
+                    className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      procesandoPDF 
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                        : 'bg-[#050C1C] text-white hover:bg-[#1A2233]'
+                    }`}
+                  >
+                    <ArrowUpTrayIcon className="w-4 h-4" />
+                    {procesandoPDF ? 'Analizando documento...' : 'Cargar Situación Académica'}
+                  </label>
+                </div>
               </div>
             </div>
 
-            {!planExiste && (
-              <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md flex gap-3 items-start text-yellow-800 text-sm">
-                <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 text-yellow-600" />
-                <div>
-                  <p className="font-bold text-yellow-900">Plan de estudios desactualizado o no registrado</p>
-                  <p>Falta actualizar o crear el plan de estudios <strong>{alumno.programa || 'correspondiente'}</strong> en el sistema para poder comparar y calcular las materias faltantes.</p>
-                </div>
-              </div>
-            )}
-
+            {/* Listas (Reemplazar mapeos internos con renderMateriaCard) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
               {/* APROBADAS */}
               <div 
                 onDragOver={handleDragOver} 
                 onDrop={(e) => handleDrop(e, 'aprobadas')}
                 className="bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 transition-colors"
               >
-                <h3 className="font-semibold text-gray-800 mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2"><CheckCircleIcon className="w-5 h-5 text-green-600" /> Aprobadas</span>
-                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">{listaAprobadas.length}</span>
-                </h3>
+                {/* ... Encabezado de columna ... */}
                 <ul className="flex flex-col gap-2 text-sm min-h-[150px]">
-                  {listaAprobadas.map((clave, idx) => (
-                    <li 
-                      key={idx} 
-                      draggable 
-                      onDragStart={(e) => handleDragStart(e, clave)}
-                      className="p-2 bg-white border-l-4 border-l-green-500 border border-gray-200 rounded shadow-sm text-center cursor-move hover:shadow-md transition-all"
-                    >
-                      <div className="font-bold text-gray-800 text-sm">{diccionarioMaterias[clave] || 'Materia desconocida'}</div>
-                      <div className="text-gray-500 text-xs mt-0.5 font-mono">{clave}</div>
-                    </li>
-                  ))}
+                  {listaAprobadas.map(clave => renderMateriaCard(clave, 'aprobadas'))}
                   {listaAprobadas.length === 0 && <li className="text-gray-400 text-xs text-center py-6 flex items-center justify-center h-full">Arrastra materias aquí</li>}
                 </ul>
               </div>
@@ -403,22 +566,9 @@ export default function PerfilAlumno() {
                 onDrop={(e) => handleDrop(e, 'reprobadas')}
                 className="bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 transition-colors"
               >
-                <h3 className="font-semibold text-gray-800 mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2"><XCircleIcon className="w-5 h-5 text-red-600" /> Reprobadas</span>
-                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">{listaReprobadas.length}</span>
-                </h3>
+                {/* ... Encabezado de columna ... */}
                 <ul className="flex flex-col gap-2 text-sm min-h-[150px]">
-                  {listaReprobadas.map((clave, idx) => (
-                    <li 
-                      key={idx} 
-                      draggable 
-                      onDragStart={(e) => handleDragStart(e, clave)}
-                      className="p-2 bg-white border-l-4 border-l-red-500 border border-gray-200 rounded shadow-sm text-center cursor-move hover:shadow-md transition-all"
-                    >
-                      <div className="font-bold text-gray-800 text-sm">{diccionarioMaterias[clave] || 'Materia desconocida'}</div>
-                      <div className="text-gray-500 text-xs mt-0.5 font-mono">{clave}</div>
-                    </li>
-                  ))}
+                  {listaReprobadas.map(clave => renderMateriaCard(clave, 'reprobadas'))}
                   {listaReprobadas.length === 0 && <li className="text-gray-400 text-xs text-center py-6 flex items-center justify-center h-full">Arrastra materias aquí</li>}
                 </ul>
               </div>
@@ -429,26 +579,10 @@ export default function PerfilAlumno() {
                 onDrop={(e) => handleDrop(e, 'faltantes')}
                 className="bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 transition-colors"
               >
-                <h3 className="font-semibold text-gray-800 mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2"><ClockIcon className="w-5 h-5 text-blue-600" /> Faltantes</span>
-                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs font-bold">
-                    {planExiste ? faltantesCalculadas.length : '?'}
-                  </span>
-                </h3>
-                
+                {/* ... Encabezado de columna ... */}
                 {planExiste ? (
                   <ul className="flex flex-col gap-2 text-sm min-h-[150px]">
-                    {faltantesCalculadas.map((clave, idx) => (
-                      <li 
-                        key={idx} 
-                        draggable 
-                        onDragStart={(e) => handleDragStart(e, clave)}
-                        className="p-2 bg-white border-l-4 border-l-blue-500 border border-gray-200 rounded shadow-sm text-center cursor-move hover:shadow-md transition-all"
-                      >
-                        <div className="font-bold text-gray-800 text-sm">{diccionarioMaterias[clave] || 'Materia desconocida'}</div>
-                        <div className="text-gray-500 text-xs mt-0.5 font-mono">{clave}</div>
-                      </li>
-                    ))}
+                    {faltantesCalculadas.map(clave => renderMateriaCard(clave, 'faltantes'))}
                     {faltantesCalculadas.length === 0 && <li className="text-gray-400 text-xs text-center py-6 flex items-center justify-center h-full">Arrastra materias aquí</li>}
                   </ul>
                 ) : (

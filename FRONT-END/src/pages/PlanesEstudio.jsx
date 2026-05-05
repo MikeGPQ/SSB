@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
 import { EyeIcon, ArrowUpTrayIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import { procesarPDF } from '../utils/procesarPDF';
-import { collection, doc, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, query, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { procesarPDFEquivalencias } from '../utils/procesarTablaEquivalencias';
 
 export default function PlanesEstudio() {
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [datosEquivalencias, setDatosEquivalencias] = useState([]);
+  const [procesandoEquivalencia, setProcesandoEquivalencia] = useState(false);
+  const [subiendoEquivalencias, setSubiendoEquivalencias] = useState(false);
 
   const [planes, setPlanes] = useState([]); 
   const [busqueda, setBusqueda] = useState('');
@@ -31,6 +36,65 @@ export default function PlanesEstudio() {
 
   const [paginaActual, setPaginaActual] = useState(1);
   const elementosPorPagina = 10;
+
+  const cerrarModalEquivalencia = () => {
+  setModalEquivalenciaAbierto(false);
+  setPlanSeleccionado(null);
+  setDatosEquivalencias([]);
+  setProcesandoEquivalencia(false);
+};
+
+const handleArchivoEquivalencia = async (event) => {
+    const file = event.target.files[0];
+    if (!file || file.type !== 'application/pdf') return;
+
+    setProcesandoEquivalencia(true);
+    try {
+      const equivalencias = await procesarPDFEquivalencias(file);
+      if (equivalencias.length === 0) {
+        alert("No se detectaron equivalencias en el formato esperado.");
+      }
+      setDatosEquivalencias(equivalencias);
+    } catch (error) {
+      console.error("Error al leer PDF de equivalencias:", error);
+      alert("Error crítico al procesar el archivo PDF.");
+    } finally {
+      setProcesandoEquivalencia(false);
+    }
+  };
+
+  const guardarEquivalencias = async () => {
+    if (!planSeleccionado || datosEquivalencias.length === 0) return;
+
+    setSubiendoEquivalencias(true);
+
+    try {
+      const batch = writeBatch(db);
+      
+      const equivalenciasRef = collection(db, 'planes', planSeleccionado.id, 'equivalencias');
+
+      datosEquivalencias.forEach((equiv) => {
+        const docRef = doc(equivalenciasRef, equiv.claveOriginal);
+        batch.set(docRef, {
+          codigo_original: equiv.claveOriginal,
+          nombre_original: equiv.nombreOriginal,
+          codigo_equivalente: equiv.claveEquivalente || null
+        });
+      });
+
+      await batch.commit();
+      alert("Tabla de equivalencias guardada exitosamente.");
+      
+      cerrarModalEquivalencia();
+      await cargarPlanes(); 
+
+    } catch (error) {
+      console.error("Error al guardar equivalencias:", error);
+      alert("Hubo un error al guardar las equivalencias en Firestore.");
+    } finally {
+      setSubiendoEquivalencias(false);
+    }
+  };
 
   const abrirModalDetalles = async (plan) => {
     setPlanDetalleSeleccionado(plan);
@@ -60,14 +124,23 @@ export default function PlanesEstudio() {
     setMateriasDetalle([]);
   };
 
-  const cargarPlanes = async () => {
+const cargarPlanes = async () => {
     setCargandoDatos(true);
     try {
       const planesSnapshot = await getDocs(collection(db, 'planes'));
-      const planesData = [];
-      planesSnapshot.forEach((documento) => {
-        planesData.push({ id: documento.id, ...documento.data() });
-      });
+      
+      const planesData = await Promise.all(planesSnapshot.docs.map(async (documento) => {
+        const planData = { id: documento.id, ...documento.data() };
+        
+        const equivalenciasRef = collection(db, 'planes', documento.id, 'equivalencias');
+        const q = query(equivalenciasRef, limit(1));
+        const equivalenciasSnap = await getDocs(q);
+        
+        planData.tiene_equivalencias = !equivalenciasSnap.empty;
+        
+        return planData;
+      }));
+
       setPlanes(planesData);
     } catch (error) {
       console.error("Error al obtener planes:", error);
@@ -275,25 +348,27 @@ const guardarImportacion = async () => {
                     <td className="px-4 py-2">{plan.nombre}</td>
                     <td className="px-4 py-2">{plan.nivel}</td>
                     <td className="px-4 py-2">
-                      {plan.tabla_equivalencia ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                      {plan.tiene_equivalencias ? (
+                        <button 
+                          onClick={() => abrirModalEquivalencia(plan)}
+                          className="group inline-flex items-center gap-1.5 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-md border border-green-200 transition-colors"
+                          title="Actualizar tabla de equivalencias"
+                        >
                           Disponible
-                        </span>
+                          <ArrowUpTrayIcon className="w-3.5 h-3.5 text-green-600 opacity-60 group-hover:opacity-100 transition-opacity" />
+                        </button>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-100">
-                          Faltante
-                        </span>
+                        <button 
+                          onClick={() => abrirModalEquivalencia(plan)}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-md border border-gray-300 transition-colors"
+                        >
+                          <ArrowUpTrayIcon className="w-3.5 h-3.5" />
+                          Faltante - Subir tabla
+                        </button>
                       )}
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-1.5">
-                        <button 
-                          onClick={() => abrirModalEquivalencia(plan)}
-                          className="inline-flex items-center justify-center bg-white border border-gray-300 text-gray-700 px-2 py-1 rounded-md hover:bg-gray-50 transition-colors"
-                          title="Subir tabla de equivalencias"
-                        >
-                          <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-                        </button>
                         <button 
                           onClick={() => abrirModalEditar(plan)}
                           className="inline-flex items-center justify-center bg-white border border-gray-300 text-gray-700 px-2 py-1 rounded-md hover:bg-gray-50 transition-colors"
@@ -310,6 +385,7 @@ const guardarImportacion = async () => {
                         </button>
                       </div>
                     </td>
+                    
                   </tr>
                 ))
               ) : (
@@ -488,29 +564,56 @@ const guardarImportacion = async () => {
       {modalEquivalenciaAbierto && planSeleccionado && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-md shadow-lg w-full max-w-md">
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Subir Tabla de Equivalencias</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">
+              {planSeleccionado.tiene_equivalencias ? 'Actualizar Tabla de Equivalencias' : 'Subir Tabla de Equivalencias'}
+            </h2>
             <p className="text-sm text-gray-600 mb-6">
-              Asignando tabla para el plan: <span className="font-bold text-[#050C1C]">{planSeleccionado.codigo}</span>
+              Asignando tabla para el plan: <span className="font-bold text-[#050C1C]">{planSeleccionado.codigo}</span>.
+              {planSeleccionado.tiene_equivalencias && (
+                <span className="block mt-1 text-amber-600">
+                  Nota: Subir un nuevo documento sobrescribirá las equivalencias actuales.
+                </span>
+              )}
             </p>
             
             <input 
               type="file" 
-              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-[#050C1C] hover:file:bg-gray-100 mb-6 border border-gray-200 rounded-md p-2"
+              accept=".pdf"
+              onChange={handleArchivoEquivalencia}
+              disabled={procesandoEquivalencia || subiendoEquivalencias}
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-[#050C1C] hover:file:bg-gray-100 mb-4 border border-gray-200 rounded-md p-2 disabled:opacity-50"
             />
+
+            {procesandoEquivalencia && (
+              <p className="text-sm font-semibold text-[#050C1C] mb-4">Procesando documento PDF...</p>
+            )}
+
+            {datosEquivalencias.length > 0 && (
+              <div className="p-3 mb-6 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm font-semibold text-green-800">
+                  ✓ {datosEquivalencias.length} equivalencias extraídas listas para guardar.
+                </p>
+              </div>
+            )}
             
             <div className="flex justify-end gap-3">
               <button 
-                onClick={() => setModalEquivalenciaAbierto(false)} 
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                onClick={cerrarModalEquivalencia} 
+                disabled={subiendoEquivalencias}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button 
-                onClick={(e) => e.preventDefault()} 
-                className="bg-[#050C1C] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#1A2233] transition-colors"
+                onClick={guardarEquivalencias} 
+                disabled={datosEquivalencias.length === 0 || subiendoEquivalencias || procesandoEquivalencia}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  (datosEquivalencias.length > 0 && !subiendoEquivalencias && !procesandoEquivalencia)
+                    ? 'bg-[#050C1C] text-white hover:bg-[#1A2233]' 
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
               >
-                Guardar
+                {subiendoEquivalencias ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>

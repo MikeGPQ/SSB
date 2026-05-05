@@ -1,0 +1,70 @@
+import * as pdfjsLib from 'pdfjs-dist';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.6.205/build/pdf.worker.min.mjs';
+
+export const procesarPDFEquivalencias = async (file) => {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const materiasExtraidas = [];
+
+  const regexClave = /^[A-Z0-9]{4,5}$/;
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    
+    const rows = {};
+    const MARGEN_ERROR_Y = 5; 
+
+    for (const item of textContent.items) {
+      const str = item.str.trim();
+      if (!str) continue;
+      
+      const y = Math.round(item.transform[5] / MARGEN_ERROR_Y) * MARGEN_ERROR_Y;
+      if (!rows[y]) rows[y] = [];
+      
+      rows[y].push({ text: str, x: item.transform[4] });
+    }
+
+    const sortedY = Object.keys(rows).sort((a, b) => b - a);
+
+    for (const y of sortedY) {
+      const columnas = rows[y]
+        .sort((a, b) => a.x - b.x)
+        .map(col => col.text);
+
+      if (columnas.length < 2) continue;
+      
+      if (columnas[0].toUpperCase() === 'CLAVE' || columnas[0].toUpperCase() === 'ASIGNATURA') continue;
+
+      if (regexClave.test(columnas[0])) {
+        const claveOriginal = columnas[0];
+        const nombreOriginal = columnas[1];
+        let claveEquivalente = null;
+
+        if (columnas.length >= 3) {
+          if (regexClave.test(columnas[2])) {
+            claveEquivalente = columnas[2];
+          } else if (columnas.length >= 4 && regexClave.test(columnas[3])) {
+             // A veces la estructura intercala celdas vacías
+            claveEquivalente = columnas[3];
+          }
+        }
+
+        materiasExtraidas.push({
+          claveOriginal: claveOriginal,
+          nombreOriginal: nombreOriginal,
+          claveEquivalente: claveEquivalente
+        });
+      }
+    }
+  }
+
+
+  const materiasUnicas = Array.from(new Set(materiasExtraidas.map(m => m.claveOriginal)))
+    .map(clave => {
+      return materiasExtraidas.find(m => m.claveOriginal === clave);
+    });
+
+  return materiasUnicas;
+};
