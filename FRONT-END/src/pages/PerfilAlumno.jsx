@@ -11,11 +11,14 @@ import {
   ClockIcon,
   ArrowUpTrayIcon,
   XMarkIcon,
-  ArrowsRightLeftIcon
+  ArrowsRightLeftIcon,
+  PencilIcon,
+  CheckIcon
 } from '@heroicons/react/24/outline';
-import { procesarSituacionAcademica } from '../utils/procesarSituacionAcademica';
 
 export default function PerfilAlumno() {
+  const [editingFields, setEditingFields] = useState({});
+  const [editValues, setEditValues] = useState({});
   const [modoEquivalencia, setModoEquivalencia] = useState(false);
   const [planesConEquivalencias, setPlanesConEquivalencias] = useState([]);
   const [planEquivalenciaSeleccionado, setPlanEquivalenciaSeleccionado] = useState('');
@@ -45,6 +48,61 @@ export default function PerfilAlumno() {
   const abrirModalDetalle = (titulo, lista, color) => {
     setDatosModal({ titulo, lista, color });
     setModalAbierto(true);
+  };
+
+  const calcularLetrasCURP = (nombre, paterno, materno) => {
+  const limpia = (str) => String(str || '').trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const nom = limpia(nombre); const pat = limpia(paterno); const mat = limpia(materno);
+  if (!nom || !pat) return null;
+
+  const ignorar = ['DE', 'LA', 'LAS', 'LOS', 'MAC', 'MC', 'VAN', 'VON', 'Y'];
+
+  const getPalabraFiltro = (texto) => {
+    const palabras = texto.split(' ').filter(p => !ignorar.includes(p));
+    return palabras[0] || 'X';
+  };
+
+  const getNombreFiltro = (texto) => {
+    const palabras = texto.split(' ').filter(p => !ignorar.includes(p));
+    if (palabras.length > 1 && (palabras[0] === 'JOSE' || palabras[0] === 'MARIA')) {
+      return palabras[1];
+    }
+    return palabras[0] || 'X';
+  };
+
+  const apellidoPat = getPalabraFiltro(pat);
+  const apellidoMat = getPalabraFiltro(mat) !== 'X' ? getPalabraFiltro(mat) : '';
+  const primerNom = getNombreFiltro(nom);
+
+  const letra1 = apellidoPat.charAt(0) || 'X';
+  let letra2 = 'X';
+  for (let i = 1; i < apellidoPat.length; i++) {
+    if (['A', 'E', 'I', 'O', 'U'].includes(apellidoPat.charAt(i))) {
+      letra2 = apellidoPat.charAt(i); break;
+    }
+  }
+  const letra3 = apellidoMat ? apellidoMat.charAt(0) : 'X';
+  const letra4 = primerNom.charAt(0) || 'X';
+  let prefijo = `${letra1}${letra2}${letra3}${letra4}`;
+
+  const malas = ['BACA','BAKA','BUEI','BUEY','CACA','CACO','CAGA','CAGO','CAKA','CAKO','COGE','COGI','COJA','COJE','COJI','COJO','COLA','CULO','FALO','FETO','GETA','GUEI','GUEY','JETA','JOTO','KACA','KACO','KAGA','KAGO','KAKA','KAKO','KOGE','KOGI','KOJA','KOJE','KOJI','KOJO','KOLA','KULO','LILO','LOCA','LOCO','LOKA','LOKO','MAME','MAMO','MEAR','MEAS','MEON','MIAR','MION','MOCO','MOKO','MUTE','NACA','NACO','PEDA','PEDO','PENE','PIPI','PITO','POPO','PUTA','PUTO','QULO','RATA','ROBA','ROBE','ROBO','RUIN','SENO','TETA','VACA','VAGA','VAGO','VAKA','VUEI','VUEY','WUEI','WUEY'];
+  if (malas.includes(prefijo)) prefijo = prefijo.charAt(0) + 'X' + prefijo.substring(2);
+
+  const getPrimeraConsonanteInterna = (palabra) => {
+    for (let i = 1; i < palabra.length; i++) {
+      const char = palabra.charAt(i);
+      if (/[B-DF-HJ-NP-TV-Z]/.test(char)) return char;
+      if (char === 'Ñ') return 'X';
+    }
+    return 'X';
+  };
+
+  const cons1 = getPrimeraConsonanteInterna(apellidoPat);
+  const cons2 = apellidoMat ? getPrimeraConsonanteInterna(apellidoMat) : 'X';
+  const cons3 = getPrimeraConsonanteInterna(primerNom);
+  const consonantes = `${cons1}${cons2}${cons3}`;
+
+  return { prefijo, consonantes };
   };
 
   useEffect(() => {
@@ -317,6 +375,166 @@ export default function PerfilAlumno() {
     if (clave) moverMateria(clave, destino);
   };
 
+const handleToggleEdit = async (field, currentValue) => {
+    if (editingFields[field]) {
+      let valueToSave = editValues[field];
+
+      if (typeof valueToSave === 'string') {
+        valueToSave = valueToSave.trim();
+        
+        if (valueToSave === '') {
+          alert("El campo no puede estar vacío ni contener solo espacios.");
+          return; 
+        }
+
+        if (field === 'curp') {
+          if (valueToSave.length !== 18) {
+            alert("La CURP debe tener exactamente 18 caracteres.");
+            return;
+          }
+
+          const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/i;
+          if (!curpRegex.test(valueToSave)) {
+            alert("El formato de la CURP es incorrecto.");
+            return;
+          }
+
+          const { nombre, apellido_paterno, apellido_materno } = alumno;
+          if (nombre && apellido_paterno) {
+            const letrasEsperadas = calcularLetrasCURP(nombre, apellido_paterno, apellido_materno || '');
+            if (letrasEsperadas) {
+              const prefijoIngresado = valueToSave.substring(0, 4);
+              const consonantesIngresadas = valueToSave.substring(13, 16);
+              
+              if (prefijoIngresado !== letrasEsperadas.prefijo) {
+                alert(`El inicio de la CURP no coincide con el nombre. Debería ser ${letrasEsperadas.prefijo}.`);
+                return;
+              }
+              if (consonantesIngresadas !== letrasEsperadas.consonantes) {
+                alert(`Las consonantes internas no coinciden. Deberían ser ${letrasEsperadas.consonantes}.`);
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      if (valueToSave === undefined) {
+        valueToSave = currentValue;
+      }
+
+      try {
+        const alumnoRef = doc(db, 'alumnos', matricula);
+        await updateDoc(alumnoRef, { [field]: valueToSave });
+        
+        setAlumno(prev => ({ ...prev, [field]: valueToSave }));
+        setEditingFields(prev => ({ ...prev, [field]: false }));
+      } catch (error) {
+        console.error("Error al actualizar:", error);
+        alert("Error al guardar los cambios.");
+      }
+    } else {
+      setEditingFields(prev => ({ ...prev, [field]: true }));
+      setEditValues(prev => ({
+        ...prev,
+        [field]: (currentValue === null || currentValue === undefined || currentValue === 'N/A') ? '' : currentValue
+      }));
+    }
+  };
+
+const renderEditableField = (label, field, type = 'text', options = []) => {
+    const isEditing = editingFields[field];
+    const currentValue = alumno[field];
+    const draftValue = editValues[field] !== undefined ? editValues[field] : currentValue;
+
+    let displayValue = currentValue;
+    if (currentValue === null || currentValue === undefined || currentValue === '') {
+      displayValue = 'N/A';
+    } else if (type === 'boolean') {
+      displayValue = currentValue ? 'Sí' : 'No';
+    }
+
+    return (
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-gray-500">{label}</p>
+          {!isEditing ? (
+            <button
+              onClick={() => handleToggleEdit(field, currentValue)}
+              className="text-gray-400 hover:text-[#050C1C] transition-colors"
+              title="Editar"
+            >
+              <PencilIcon className="w-4 h-4" />
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleToggleEdit(field, currentValue)}
+                className="text-green-600 hover:text-green-800 transition-colors"
+                title="Guardar"
+              >
+                <CheckIcon className="w-4 h-4 stroke-2" />
+              </button>
+              <button
+                onClick={() => setEditingFields(prev => ({ ...prev, [field]: false }))}
+                className="text-red-500 hover:text-red-700 transition-colors"
+                title="Cancelar"
+              >
+                <XMarkIcon className="w-4 h-4 stroke-2" />
+              </button>
+            </div>
+          )}
+        </div>
+        
+        {isEditing ? (
+          <div>
+            {type === 'select' ? (
+              <select
+                value={draftValue || ''}
+                onChange={(e) => setEditValues({ ...editValues, [field]: e.target.value })}
+                className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-[#050C1C]"
+              >
+                <option value="">N/A</option>
+                {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            ) : type === 'boolean' ? (
+              <select
+                value={draftValue === null ? '' : (draftValue ? 'true' : 'false')}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditValues({ ...editValues, [field]: val === '' ? null : val === 'true' });
+                }}
+                className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-[#050C1C]"
+              >
+                <option value="">N/A</option>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={draftValue || ''}
+                onChange={(e) => {
+                  let val = e.target.value;
+                  if (field === 'curp') {
+                    val = val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                    if (val.length > 18) return; 
+                  }
+                  setEditValues({ ...editValues, [field]: val });
+                }}
+                className={`w-full border rounded-md px-2 py-1 text-sm focus:outline-none focus:border-[#050C1C] ${field === 'curp' ? 'uppercase font-mono tracking-wider' : ''} border-gray-300`}
+              />
+            )}
+          </div>
+        ) : (
+          <p className={`font-medium ${type === 'boolean' && field === 'tiene_adeudo' ? (currentValue === null ? 'text-gray-800' : (currentValue ? 'text-red-600' : 'text-green-600')) : ''}`}>
+            {displayValue}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const renderMateriaCard = (clave, listaOrigen) => {
   const isEquivalenciaMode = modoEquivalencia && planEquivalenciaSeleccionado;
   const tieneEquivalencia = isEquivalenciaMode && !!mapaEquivalencias[clave];
@@ -372,12 +590,38 @@ export default function PerfilAlumno() {
           <h1 className="text-2xl font-bold text-gray-800">{alumno.nombre_completo}</h1>
           <p className="text-sm text-gray-500">Matrícula: {alumno.matricula} | Programa: {alumno.programa}</p>
         </div>
-        <div>
-          <span className={`px-4 py-2 rounded text-sm font-bold tracking-wide border ${
-            alumno.estatus === 'BF' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'
-          }`}>
-            Estatus: {alumno.estatus}
-          </span>
+        <div className="flex items-center gap-3">
+          {editingFields['estatus'] ? (
+            <div className="flex items-center gap-2">
+              <select
+                value={editValues['estatus'] || ''}
+                onChange={(e) => setEditValues(prev => ({ ...prev, estatus: e.target.value }))}
+                className="px-3 py-1.5 border border-gray-300 rounded text-sm font-bold focus:outline-none focus:border-[#050C1C]"
+              >
+                <option value="">N/A</option>
+                {['BA','BC','BD','BE','BF','BI','BM','BN','BP','BR','BS','BU','BV','FI','FP','GC'].map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+              <button onClick={() => handleToggleEdit('estatus', alumno.estatus)} className="p-1 hover:bg-gray-100 rounded text-green-600" title="Guardar">
+                <CheckIcon className="w-5 h-5 stroke-2" />
+              </button>
+              <button onClick={() => setEditingFields(prev => ({ ...prev, estatus: false }))} className="p-1 hover:bg-gray-100 rounded text-red-500" title="Cancelar">
+                <XMarkIcon className="w-5 h-5 stroke-2" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className={`px-4 py-2 rounded text-sm font-bold tracking-wide border ${
+                alumno.estatus === 'BF' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'
+              }`}>
+                Estatus: {alumno.estatus || 'N/A'}
+              </span>
+              <button onClick={() => handleToggleEdit('estatus', alumno.estatus)} className="p-1 hover:bg-gray-100 rounded text-gray-500" title="Editar">
+                <PencilIcon className="w-5 h-5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -446,33 +690,28 @@ export default function PerfilAlumno() {
                     )}
                   </div>
                 </div>
-                <div><p className="text-gray-500">CURP</p><p className="font-medium">{alumno.curp || 'N/A'}</p></div>
+                {renderEditableField('CURP', 'curp')}
                 <div><p className="text-gray-500">Género</p><p className="font-medium">{alumno.genero || 'N/A'}</p></div>
-                <div><p className="text-gray-500">Campus</p><p className="font-medium">{alumno.campus || 'N/A'}</p></div>
+                {renderEditableField('Campus', 'campus')}
                 <div><p className="text-gray-500">Tipo Ingreso</p><p className="font-medium">{alumno.tipo_ingreso || 'N/A'}</p></div>
-                <div><p className="text-gray-500">Primer Ingreso</p><p className="font-medium">{alumno.ciclo_primer_ingreso || 'N/A'}</p></div>
-                <div><p className="text-gray-500">Último Ciclo</p><p className="font-medium">{alumno.ciclo_ultimo_cursado || 'N/A'}</p></div>
+                {renderEditableField('Primer Ingreso', 'ciclo_primer_ingreso')}
+                {renderEditableField('Último Ciclo', 'ciclo_ultimo_cursado')}
               </div>
             </div>
 
             <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm flex flex-col gap-6">
               <div>
                 <h2 className="text-lg font-bold text-[#050C1C] mb-4 border-b pb-2">Estatus de Salida</h2>
-                <div className="text-sm space-y-2">
-                  <p><span className="text-gray-500">Motivo:</span> <span className="font-medium">{alumno.motivo_baja || 'N/A'}</span></p>
-                  <p><span className="text-gray-500">Documentación Retirada:</span> <span className="font-medium">{alumno.documentacion_retirada === null ? 'N/A' : (alumno.documentacion_retirada ? 'Sí' : 'No')}</span></p>
+                <div className="text-sm space-y-4">
+                  {renderEditableField('Motivo', 'motivo_baja')}
+                  {renderEditableField('Documentación Retirada', 'documentacion_retirada', 'boolean')}
                 </div>
               </div>
               <div>
                 <h2 className="text-lg font-bold text-[#050C1C] mb-4 border-b pb-2">Situación Financiera</h2>
-                <div className="text-sm space-y-2">
-                  <p>
-                    <span className="text-gray-500">Adeudo:</span>{' '}
-                    <span className={`font-medium ${alumno.tiene_adeudo === null ? 'text-gray-800' : (alumno.tiene_adeudo ? 'text-red-600' : 'text-green-600')}`}>
-                      {alumno.tiene_adeudo === null ? 'N/A' : (alumno.tiene_adeudo ? 'Sí' : 'No')}
-                    </span>
-                  </p>
-                  <p><span className="text-gray-500">Detalle:</span> <span className="font-medium">{alumno.detalle_adeudo || 'N/A'}</span></p>
+                <div className="text-sm space-y-4">
+                  {renderEditableField('Adeudo', 'tiene_adeudo', 'boolean')}
+                  {renderEditableField('Detalle', 'detalle_adeudo')}
                 </div>
               </div>
             </div>
