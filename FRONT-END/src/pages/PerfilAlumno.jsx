@@ -281,6 +281,50 @@ export default function PerfilAlumno() {
     );
   }
 
+  const handleMarcadorChange = async (e) => {
+    const nuevoMarcador = e.target.value;
+    try {
+      const alumnoRef = doc(db, 'alumnos', matricula);
+      await updateDoc(alumnoRef, { marcador_seguimiento: nuevoMarcador });
+      setAlumno(prev => ({ ...prev, marcador_seguimiento: nuevoMarcador }));
+    } catch (error) {
+      console.error("Error al actualizar marcador:", error);
+      alert("Error al guardar el marcador.");
+    }
+  };
+
+  const handleAgregarComentario = async () => {
+    if (!comentario.trim()) {
+      alert("El comentario no puede estar vacío.");
+      return;
+    }
+
+    const fechaActual = new Date().toLocaleString('es-MX', {
+      dateStyle: 'short',
+      timeStyle: 'short'
+    });
+
+    const nuevoRegistro = {
+      id: Date.now().toString(),
+      fecha: fechaActual,
+      agente: 'Usuario', 
+      comentario: comentario.trim()
+    };
+
+    const nuevaBitacora = [...(alumno.bitacora_llamadas || []), nuevoRegistro];
+
+    try {
+      const alumnoRef = doc(db, 'alumnos', matricula);
+      await updateDoc(alumnoRef, { bitacora_llamadas: nuevaBitacora });
+      
+      setAlumno(prev => ({ ...prev, bitacora_llamadas: nuevaBitacora }));
+      setComentario('');
+    } catch (error) {
+      console.error("Error al agregar comentario:", error);
+      alert("Error al guardar en la bitácora.");
+    }
+  };
+
   const handleCargarSituacion = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -417,6 +461,21 @@ const handleToggleEdit = async (field, currentValue) => {
             }
           }
         }
+
+        if (field === 'contacto_telefono') {
+          if (!/^\d{10}$/.test(valueToSave)) {
+            alert("El teléfono debe contener exactamente 10 números.");
+            return;
+          }
+        }
+
+        if (field === 'contacto_correo') {
+          if (/\s/.test(valueToSave) || !valueToSave.includes('@') || !valueToSave.includes('.com')) {
+            alert("El correo debe contener '@' y '.com', y no puede tener espacios.");
+            return;
+          }
+        }
+      
       }
 
       if (valueToSave === undefined) {
@@ -519,6 +578,11 @@ const renderEditableField = (label, field, type = 'text', options = []) => {
                   if (field === 'curp') {
                     val = val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                     if (val.length > 18) return; 
+                  } else if (field === 'contacto_telefono') {
+                    val = val.replace(/\D/g, ''); 
+                    if (val.length > 10) return; 
+                  } else if (field === 'contacto_correo') {
+                    val = val.replace(/\s/g, ''); 
                   }
                   setEditValues({ ...editValues, [field]: val });
                 }}
@@ -840,33 +904,34 @@ const renderEditableField = (label, field, type = 'text', options = []) => {
             <div className="md:col-span-1 border-r border-gray-100 pr-4">
               <h2 className="text-lg font-bold text-[#050C1C] mb-4 border-b pb-2">Datos de Contacto</h2>
               <div className="text-sm space-y-4">
+                
+                {/* Editable Correo */}
                 <div>
-                  <p className="text-gray-500">Correo Electrónico</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="font-medium">{alumno.contacto_correo || 'No registrado'}</p>
-                    {alumno.contacto_correo && (
-                      <a href={`mailto:${alumno.contacto_correo}`} className="p-1.5 bg-[#050C1C] text-white rounded-md hover:bg-[#1A2233]" title="Enviar correo">
-                        <EnvelopeIcon className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
+                  {renderEditableField('Correo Electrónico', 'contacto_correo')}
+                  {!editingFields['contacto_correo'] && alumno.contacto_correo && (
+                    <a href={`mailto:${alumno.contacto_correo}`} className="inline-flex items-center gap-1 mt-2 text-xs text-blue-600 hover:text-blue-800 transition-colors">
+                      <EnvelopeIcon className="w-4 h-4" /> Enviar correo
+                    </a>
+                  )}
                 </div>
+
+                {/* Editable Teléfono */}
                 <div>
-                  <p className="text-gray-500">Teléfono</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="font-medium">{alumno.contacto_telefono || 'No registrado'}</p>
-                    {alumno.contacto_telefono && (
-                      <a href={`https://wa.me/52${alumno.contacto_telefono}`} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-[#25D366] text-white rounded-md hover:bg-[#1DA851]" title="Enviar WhatsApp">
-                        <ChatBubbleLeftRightIcon className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
+                  {renderEditableField('Teléfono', 'contacto_telefono')}
+                  {!editingFields['contacto_telefono'] && alumno.contacto_telefono && (
+                    <a href={`https://wa.me/52${alumno.contacto_telefono}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-green-600 hover:text-green-800 transition-colors">
+                      <ChatBubbleLeftRightIcon className="w-4 h-4" /> Enviar WhatsApp
+                    </a>
+                  )}
                 </div>
+
+                {/* Marcador*/}
                 <div>
                   <p className="text-gray-500">Marcador Actual</p>
                   <select 
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-[#050C1C]"
-                    defaultValue={alumno.marcador_seguimiento}
+                    value={alumno.marcador_seguimiento || 'No contactado'}
+                    onChange={handleMarcadorChange}
                   >
                     <option value="No contactado">No contactado</option>
                     <option value="Esperando respuesta">Esperando respuesta</option>
@@ -879,8 +944,8 @@ const renderEditableField = (label, field, type = 'text', options = []) => {
             
             <div className="md:col-span-2">
               <h2 className="text-lg font-bold text-[#050C1C] mb-4 border-b pb-2">Bitácora de Seguimiento</h2>
-              <div className="bg-gray-50 border border-gray-200 rounded-md p-4 h-40 overflow-y-auto mb-4 space-y-3">
-                {alumno.bitacora_llamadas.length > 0 ? (
+              <div className="bg-gray-50 border border-gray-200 rounded-md p-4 h-64 overflow-y-auto mb-4 space-y-3">
+                {alumno.bitacora_llamadas && alumno.bitacora_llamadas.length > 0 ? (
                   alumno.bitacora_llamadas.map((entry, idx) => (
                     <div key={entry.id || idx} className="text-sm bg-white p-3 border border-gray-100 rounded shadow-sm">
                       <div className="flex justify-between text-xs text-gray-500 mb-1">
@@ -901,8 +966,12 @@ const renderEditableField = (label, field, type = 'text', options = []) => {
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-[#050C1C]"
                   value={comentario}
                   onChange={(e) => setComentario(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAgregarComentario()}
                 />
-                <button className="bg-[#050C1C] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#1A2233]">
+                <button 
+                  onClick={handleAgregarComentario}
+                  className="bg-[#050C1C] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#1A2233]"
+                >
                   Guardar
                 </button>
               </div>
