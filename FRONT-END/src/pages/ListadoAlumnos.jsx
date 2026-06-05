@@ -187,12 +187,21 @@ export default function ListadoAlumnos() {
       return;
     }
 
+    const alumnosNuevos = datosTemporales.filter(
+      (temp) => !alumnos.some((a) => String(a.matricula) === String(temp.matricula))
+    );
+
+    if (alumnosNuevos.length === 0) {
+      alert("Todos los alumnos del archivo ya se encuentran registrados en el sistema. No se importó ningún registro nuevo.");
+      return;
+    }
+
     setIsSubmitting(true); 
 
     try {
       const chunks = [];
-      for (let i = 0; i < datosTemporales.length; i += 500) {
-        chunks.push(datosTemporales.slice(i, i + 500));
+      for (let i = 0; i < alumnosNuevos.length; i += 500) {
+        chunks.push(alumnosNuevos.slice(i, i + 500));
       }
 
       for (const chunk of chunks) {
@@ -206,14 +215,16 @@ export default function ListadoAlumnos() {
         await batch.commit();
       }
 
+      const omitidos = datosTemporales.length - alumnosNuevos.length;
+
       await registrarLog({
         usuario: currentUser?.email,
         accion: 'IMPORT',
         coleccion: 'alumnos',
-        detalles: `Se importaron ${datosTemporales.length} alumnos mediante archivo CSV/Excel.`
+        detalles: `Se importaron ${alumnosNuevos.length} alumnos nuevos mediante archivo CSV/Excel. Se omitieron ${omitidos} duplicados.`
       });
 
-      alert(`Se han guardado ${datosTemporales.length} alumnos correctamente.`);
+      alert(`Se han guardado ${alumnosNuevos.length} alumnos nuevos correctamente.${omitidos > 0 ? ` Se omitieron ${omitidos} registros que ya existían.` : ''}`);
       
       cerrarModal();
       await cargarAlumnos();

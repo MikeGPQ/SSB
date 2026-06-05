@@ -791,6 +791,15 @@ const renderEditableField = (label, field, type = 'text', options = []) => {
                       disabled={actualizandoPlan}
                     >
                       <option value="" disabled>Seleccione un plan</option>
+                      
+                      {/* NUEVO: Mostrar el plan actual si no está en la lista de planes registrados */}
+                      {alumno.programa && !listaPlanes.includes(alumno.programa) && (
+                        <option value={alumno.programa}>
+                          {alumno.programa} (No registrado en DB)
+                        </option>
+                      )}
+
+                      {/* Mapeo normal de los planes registrados */}
                       {listaPlanes.map((codigoPlan, index) => (
                          <option key={index} value={codigoPlan}>{codigoPlan}</option>
                       ))}
