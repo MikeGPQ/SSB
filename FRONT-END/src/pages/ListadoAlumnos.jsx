@@ -4,6 +4,8 @@ import { EyeIcon } from '@heroicons/react/24/outline';
 import Papa from 'papaparse';
 import { collection, doc, getDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { useAuth } from '../context/AuthContext';
+import { registrarLog } from '../utils/registroLogs';
 
 const ESTATUS_COLORS = {
   'BA': 'bg-red-100 text-red-800 border-red-200',
@@ -26,6 +28,7 @@ const ESTATUS_COLORS = {
 
 export default function ListadoAlumnos() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [codigosPlanes, setCodigosPlanes] = useState([]);
 
   const [alumnos, setAlumnos] = useState([]);
@@ -202,6 +205,13 @@ export default function ListadoAlumnos() {
 
         await batch.commit();
       }
+
+      await registrarLog({
+        usuario: currentUser?.email,
+        accion: 'IMPORT',
+        coleccion: 'alumnos',
+        detalles: `Se importaron ${datosTemporales.length} alumnos mediante archivo CSV/Excel.`
+      });
 
       alert(`Se han guardado ${datosTemporales.length} alumnos correctamente.`);
       

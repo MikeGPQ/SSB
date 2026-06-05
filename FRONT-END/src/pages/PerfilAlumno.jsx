@@ -16,7 +16,11 @@ import {
   CheckIcon
 } from '@heroicons/react/24/outline';
 
+import { useAuth } from '../context/AuthContext';
+import { registrarLog } from '../utils/registroLogs';
+
 export default function PerfilAlumno() {
+  const { currentUser } = useAuth();
   const [editingFields, setEditingFields] = useState({});
   const [editValues, setEditValues] = useState({});
   const [modoEquivalencia, setModoEquivalencia] = useState(false);
@@ -262,6 +266,15 @@ export default function PerfilAlumno() {
       const alumnoRef = doc(db, 'alumnos', matricula);
       await updateDoc(alumnoRef, { programa: nuevoPlan });
       
+      await registrarLog({
+        usuario: currentUser?.email,
+        accion: 'UPDATE',
+        coleccion: 'alumnos',
+        documentoId: matricula,
+        campo: 'programa',
+        detalles: `Plan cambiado a ${nuevoPlan}`
+      });
+
       setAlumno(prev => ({ ...prev, programa: nuevoPlan }));
       alert(`Plan de estudios actualizado a ${nuevoPlan}`);
     } catch (error) {
@@ -286,6 +299,16 @@ export default function PerfilAlumno() {
     try {
       const alumnoRef = doc(db, 'alumnos', matricula);
       await updateDoc(alumnoRef, { marcador_seguimiento: nuevoMarcador });
+      
+      await registrarLog({
+        usuario: currentUser?.email,
+        accion: 'UPDATE',
+        coleccion: 'alumnos',
+        documentoId: matricula,
+        campo: 'marcador_seguimiento',
+        detalles: `Marcador cambiado a: ${nuevoMarcador}`
+      });
+
       setAlumno(prev => ({ ...prev, marcador_seguimiento: nuevoMarcador }));
     } catch (error) {
       console.error("Error al actualizar marcador:", error);
@@ -293,7 +316,7 @@ export default function PerfilAlumno() {
     }
   };
 
-  const handleAgregarComentario = async () => {
+const handleAgregarComentario = async () => {
     if (!comentario.trim()) {
       alert("El comentario no puede estar vacío.");
       return;
@@ -307,7 +330,7 @@ export default function PerfilAlumno() {
     const nuevoRegistro = {
       id: Date.now().toString(),
       fecha: fechaActual,
-      agente: 'Usuario', 
+      agente: currentUser?.email || 'Usuario', 
       comentario: comentario.trim()
     };
 
@@ -316,6 +339,15 @@ export default function PerfilAlumno() {
     try {
       const alumnoRef = doc(db, 'alumnos', matricula);
       await updateDoc(alumnoRef, { bitacora_llamadas: nuevaBitacora });
+      
+      await registrarLog({
+        usuario: currentUser?.email,
+        accion: 'UPDATE',
+        coleccion: 'alumnos',
+        documentoId: matricula,
+        campo: 'bitacora_llamadas',
+        detalles: 'Se agregó un nuevo comentario de seguimiento'
+      });
       
       setAlumno(prev => ({ ...prev, bitacora_llamadas: nuevaBitacora }));
       setComentario('');
@@ -403,6 +435,15 @@ export default function PerfilAlumno() {
         materias_aprobadas: nuevasAprobadas,
         materias_reprobadas: nuevasReprobadas
       });
+
+      await registrarLog({
+        usuario: currentUser?.email,
+        accion: 'UPDATE',
+        coleccion: 'alumnos',
+        documentoId: matricula,
+        campo: 'materias',
+        detalles: `Materia ${clave} movida a ${destino}`
+      });
     } catch (error) {
       console.error("Error al mover la materia:", error);
       alert("Error al sincronizar con la base de datos.");
@@ -485,6 +526,15 @@ const handleToggleEdit = async (field, currentValue) => {
       try {
         const alumnoRef = doc(db, 'alumnos', matricula);
         await updateDoc(alumnoRef, { [field]: valueToSave });
+        
+        await registrarLog({
+          usuario: currentUser?.email,
+          accion: 'UPDATE',
+          coleccion: 'alumnos',
+          documentoId: matricula,
+          campo: field,
+          detalles: 'Edición de información administrativa/contacto'
+        });
         
         setAlumno(prev => ({ ...prev, [field]: valueToSave }));
         setEditingFields(prev => ({ ...prev, [field]: false }));

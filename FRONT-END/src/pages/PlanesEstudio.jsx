@@ -5,10 +5,13 @@ import { collection, doc, writeBatch, getDocs, query, limit } from 'firebase/fir
 import { db } from '../config/firebase';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { procesarPDFEquivalencias } from '../utils/procesarTablaEquivalencias';
+import { useAuth } from '../context/AuthContext';
+import { registrarLog } from '../utils/registroLogs';
 
 export default function PlanesEstudio() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
 
   const [datosEquivalencias, setDatosEquivalencias] = useState([]);
   const [procesandoEquivalencia, setProcesandoEquivalencia] = useState(false);
@@ -63,7 +66,7 @@ const handleArchivoEquivalencia = async (event) => {
     }
   };
 
-  const guardarEquivalencias = async () => {
+const guardarEquivalencias = async () => {
     if (!planSeleccionado || datosEquivalencias.length === 0) return;
 
     setSubiendoEquivalencias(true);
@@ -83,6 +86,16 @@ const handleArchivoEquivalencia = async (event) => {
       });
 
       await batch.commit();
+
+      await registrarLog({
+        usuario: currentUser?.email,
+        accion: 'UPDATE',
+        coleccion: 'planes',
+        documentoId: planSeleccionado.id,
+        campo: 'equivalencias',
+        detalles: `Carga de tabla de equivalencias con ${datosEquivalencias.length} registros para el plan ${planSeleccionado.codigo}`
+      });
+
       alert("Tabla de equivalencias guardada exitosamente.");
       
       cerrarModalEquivalencia();
@@ -247,6 +260,18 @@ const guardarImportacion = async () => {
       }
 
       await batch.commit();
+
+      await registrarLog({
+        usuario: currentUser?.email,
+        accion: planEnEdicion ? 'UPDATE' : 'CREATE',
+        coleccion: 'planes',
+        documentoId: planEnEdicion ? planEnEdicion.id : planRef.id,
+        campo: 'datos_generales_y_materias',
+        detalles: planEnEdicion 
+          ? `Edición de datos del plan ${datosPlan.codigo}` 
+          : `Importación de nuevo plan ${datosPlan.codigo} con ${materiasPlan.length} materias`
+      });
+
       alert(planEnEdicion ? "Plan actualizado correctamente." : `Se ha guardado el plan con ${materiasPlan.length} materias.`);
       
       cerrarModalImportar();
