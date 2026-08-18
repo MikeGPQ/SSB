@@ -18,22 +18,20 @@ export default function RegistroUsuario() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const isFormValid = email !== '' && password !== '' && confirmPassword !== '';
+  const emailValido = email === '' || (email.includes('@') && email.includes('.com'));
+  const passwordsCoinciden = confirmPassword === '' || password === confirmPassword;
+  
+  const isFormValid = 
+    email !== '' && 
+    password !== '' && 
+    confirmPassword !== '' && 
+    email.includes('@') && 
+    email.includes('.com') && 
+    password === confirmPassword;
 
   const handleGuardarClick = (e) => {
     e.preventDefault();
     setError('');
-
-    if (!email.includes('@') || !email.includes('.com')) {
-      setError('El correo debe contener "@" y ".com".');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError('Las contraseñas no coinciden.');
-      return;
-    }
-
     setShowAuthModal(true);
   };
 
@@ -44,9 +42,7 @@ export default function RegistroUsuario() {
 
     try {
       await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
-
       await createUserWithEmailAndPassword(auth, email, password);
-
       await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
 
       await registrarLog({
@@ -93,9 +89,12 @@ export default function RegistroUsuario() {
               type="email" 
               value={email}
               onChange={(e) => preventSpaces(e, setEmail)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[#050C1C]"
+              className={`w-full px-3 py-2 border rounded-md focus:outline-none transition-colors ${!emailValido ? 'border-red-500 bg-red-50 focus:border-red-600' : 'border-gray-300 focus:border-[#050C1C]'}`}
               placeholder="ejemplo@empresa.com"
             />
+            {!emailValido && (
+              <p className="text-xs text-red-600 mt-1.5 font-bold">❌ El correo debe contener "@" y ".com"</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Contraseña (Máx 15 caracteres)</label>
@@ -114,8 +113,11 @@ export default function RegistroUsuario() {
               maxLength={15}
               value={confirmPassword}
               onChange={(e) => preventSpaces(e, setConfirmPassword)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[#050C1C]"
+              className={`w-full px-3 py-2 border rounded-md focus:outline-none transition-colors ${!passwordsCoinciden ? 'border-red-500 bg-red-50 focus:border-red-600' : 'border-gray-300 focus:border-[#050C1C]'}`}
             />
+            {!passwordsCoinciden && (
+              <p className="text-xs text-red-600 mt-1.5 font-bold">❌ Las contraseñas no coinciden</p>
+            )}
           </div>
           
           <button 
