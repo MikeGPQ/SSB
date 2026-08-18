@@ -50,6 +50,17 @@ export default function Layout() {
             Registro de Actividad
           </NavLink>
 
+          <NavLink
+            to="/registro"
+            className={({ isActive }) =>
+              `block w-full px-6 py-4 text-sm transition-colors ${
+                isActive ? 'text-white font-semibold bg-[#1A2233]' : 'hover:bg-[#1A2233] hover:text-white'
+              }`
+            }
+          >
+            Registrar Usuario
+          </NavLink>
+
         </nav>
         
         {/* Panel de Usuario al final del sidebar */}

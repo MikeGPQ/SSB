@@ -8,6 +8,7 @@ import ListadoAlumnos from './pages/ListadoAlumnos';
 import PlanesEstudio from './pages/PlanesEstudio';
 import PerfilAlumno from './pages/PerfilAlumno';
 import LogsActividad from './pages/LogsActividad';
+import RegistroUsuario from './pages/RegistroUsuario';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="planes-estudio" element={<PlanesEstudio />} />
             <Route path="alumno/:matricula" element={<PerfilAlumno />} />
             <Route path="logs" element={<LogsActividad />} />
+            <Route path="registro" element={<RegistroUsuario />} />
           </Route>
         </Routes>
       </AuthProvider>
